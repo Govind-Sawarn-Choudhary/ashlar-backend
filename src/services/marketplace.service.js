@@ -107,9 +107,21 @@ function resolveBookingAmount(lawyerId, consultationType) {
   return Number.parseFloat(fee.amount) || 0;
 }
 
+function resolveBookingDuration(lawyerId, consultationType) {
+  const fee = db
+    .prepare(`
+      SELECT duration_minutes FROM lawyer_consultation_fees
+      WHERE user_id = ? AND fee_type = ?
+    `)
+    .get(lawyerId, consultationType);
+
+  return fee?.duration_minutes || 30;
+}
+
 module.exports = {
   listApprovedLawyers,
   getApprovedLawyerById,
   toggleFavourite,
   resolveBookingAmount,
+  resolveBookingDuration,
 };

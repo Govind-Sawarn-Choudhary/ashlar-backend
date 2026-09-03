@@ -1,7 +1,11 @@
 const asyncHandler = require('../utils/asyncHandler');
+const config = require('../config');
 const db = require('../db');
 const appointmentService = require('../services/appointment.service');
 const paymentService = require('../services/payment.service');
+const consultationService = require('../services/consultation.service');
+const platformSettings = require('../services/platformSettings.service');
+const agoraService = require('../services/agora.service');
 
 const listUsers = asyncHandler(async (req, res) => {
   const { search } = req.query;
@@ -61,15 +65,84 @@ const listAppointments = asyncHandler(async (req, res) => {
     limit: Number.parseInt(req.query.limit, 10) || 50,
     offset: Number.parseInt(req.query.offset, 10) || 0,
   });
-  res.json({ appointments });
+
+  const filtered = appointments.filter((item) => {
+    if (req.query.consultationType && item.consultationType !== req.query.consultationType) {
+      return false;
+    }
+    if (req.query.mode && item.mode !== req.query.mode) {
+      return false;
+    }
+    return true;
+  });
+
+  res.json({ appointments: filtered });
+});
+
+const getAppointment = asyncHandler(async (req, res) => {
+  const appointment = appointmentService.getAppointmentById(Number(req.params.id));
+  if (!appointment) {
+    return res.status(404).json({ error: 'Appointment not found' });
+  }
+
+  const payment = appointment.paymentId
+    ? paymentService.getPaymentById(appointment.paymentId)
+    : null;
+
+  const consultation = consultationService.getSessionByAppointmentForAdmin(appointment.id);
+
+  res.json({ appointment, payment, consultation });
 });
 
 const listPayments = asyncHandler(async (req, res) => {
   const payments = paymentService.listPaymentsForAdmin({
     limit: Number.parseInt(req.query.limit, 10) || 50,
     offset: Number.parseInt(req.query.offset, 10) || 0,
+    status: req.query.status,
+    paymentType: req.query.paymentType,
   });
   res.json({ payments });
+});
+
+const listConsultations = asyncHandler(async (req, res) => {
+  const sessions = consultationService.listSessionsForAdmin({
+    status: req.query.status,
+    limit: Number.parseInt(req.query.limit, 10) || 50,
+    offset: Number.parseInt(req.query.offset, 10) || 0,
+  });
+  res.json({ sessions });
+});
+
+const getConsultation = asyncHandler(async (req, res) => {
+  const detail = consultationService.getSessionDetailForAdmin(Number(req.params.id));
+  if (!detail) {
+    return res.status(404).json({ error: 'Consultation session not found' });
+  }
+  res.json(detail);
+});
+
+const endConsultation = asyncHandler(async (req, res) => {
+  const session = consultationService.adminForceEndSession(Number(req.params.id));
+  res.json({ session });
+});
+
+const getIntegrations = asyncHandler(async (_req, res) => {
+  res.json({
+    razorpay: {
+      enabled: config.razorpayEnabled,
+      keyConfigured: Boolean(config.razorpayKeyId),
+    },
+    agora: {
+      enabled: agoraService.isEnabled(),
+      appIdConfigured: Boolean(config.agoraAppId),
+      certificateConfigured: Boolean(config.agoraAppCertificate),
+      chatAppKeyConfigured: Boolean(config.agoraChatAppKey),
+    },
+    otp: {
+      testMode: true,
+      testPhone: config.tempOtpPhone,
+    },
+  });
 });
 
 const getExtendedStats = asyncHandler(async (_req, res) => {
@@ -94,22 +167,51 @@ const getExtendedStats = asyncHandler(async (_req, res) => {
     SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE status = 'completed'
   `).get().total;
 
+  const activeConsultations = db.prepare(`
+    SELECT COUNT(*) AS count FROM consultation_sessions WHERE status = 'active'
+  `).get().count;
+
+  const waitingConsultations = db.prepare(`
+    SELECT COUNT(*) AS count FROM consultation_sessions WHERE status = 'waiting'
+  `).get().count;
+
+  const bookingsByType = db.prepare(`
+    SELECT consultation_type AS type, COUNT(*) AS count
+    FROM appointments
+    GROUP BY consultation_type
+  `).all();
+
   res.json({
     lawyers: lawyerStats,
     users: userCount,
     appointments: appointmentCount,
     paymentTotal,
+    activeConsultations,
+    waitingConsultations,
+    bookingsByType,
   });
 });
 
 const getSettings = asyncHandler(async (_req, res) => {
-  const rows = db.prepare('SELECT key, value FROM platform_settings').all();
+  const rows = db.prepare('SELECT key, value, updated_at FROM platform_settings').all();
   const settings = Object.fromEntries(rows.map((row) => [row.key, row.value]));
-  res.json({ settings });
+  res.json({
+    settings,
+    meta: platformSettings.getSettingsMeta(),
+    updatedAt: Object.fromEntries(rows.map((row) => [row.key, row.updated_at])),
+  });
 });
 
 const updateSettings = asyncHandler(async (req, res) => {
-  const entries = Object.entries(req.body || {});
+  const allowedKeys = new Set([
+    'support_phone',
+    'commission_percent',
+    'min_wallet_topup',
+    'min_wallet_withdrawal',
+    'challan_test_otp',
+  ]);
+
+  const entries = Object.entries(req.body || {}).filter(([key]) => allowedKeys.has(key));
   const upsert = db.prepare(`
     INSERT INTO platform_settings (key, value, updated_at)
     VALUES (?, ?, datetime('now'))
@@ -120,16 +222,25 @@ const updateSettings = asyncHandler(async (req, res) => {
     upsert.run(key, String(value));
   }
 
-  const rows = db.prepare('SELECT key, value FROM platform_settings').all();
+  const rows = db.prepare('SELECT key, value, updated_at FROM platform_settings').all();
   const settings = Object.fromEntries(rows.map((row) => [row.key, row.value]));
-  res.json({ settings });
+  res.json({
+    settings,
+    meta: platformSettings.getSettingsMeta(),
+    updatedAt: Object.fromEntries(rows.map((row) => [row.key, row.updated_at])),
+  });
 });
 
 module.exports = {
   listUsers,
   getUser,
   listAppointments,
+  getAppointment,
   listPayments,
+  listConsultations,
+  getConsultation,
+  endConsultation,
+  getIntegrations,
   getExtendedStats,
   getSettings,
   updateSettings,

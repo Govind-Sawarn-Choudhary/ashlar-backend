@@ -3,6 +3,7 @@ const { requireAuth } = require('../middleware/auth');
 const { getMe, saveProfile } = require('../controllers/user.controller');
 const marketplace = require('../controllers/userMarketplace.controller');
 const paymentController = require('../controllers/payment.controller');
+const consultationController = require('../controllers/consultation.controller');
 
 const router = express.Router();
 
@@ -26,6 +27,13 @@ router.post('/lawyers/:id/favourite', requireAuth, requireUserRole, marketplace.
 
 router.post('/bookings', requireAuth, requireUserRole, marketplace.createBooking);
 router.get('/appointments', requireAuth, requireUserRole, marketplace.listAppointments);
+
+router.get('/consultations', requireAuth, requireUserRole, consultationController.listConsultations);
+router.get('/appointments/:appointmentId/consultation', requireAuth, requireUserRole, consultationController.getSession);
+router.post('/appointments/:appointmentId/consultation/join', requireAuth, requireUserRole, consultationController.joinSession);
+router.get('/consultations/:sessionId/messages', requireAuth, requireUserRole, consultationController.listMessages);
+router.post('/consultations/:sessionId/messages', requireAuth, requireUserRole, consultationController.sendMessage);
+router.post('/consultations/:sessionId/end', requireAuth, requireUserRole, consultationController.endSession);
 
 router.get('/payments/razorpay/config', requireAuth, requireUserRole, paymentController.getRazorpayConfig);
 router.post('/payments/razorpay/order', requireAuth, requireUserRole, paymentController.createRazorpayOrder);

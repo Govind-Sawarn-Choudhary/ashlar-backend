@@ -1,10 +1,22 @@
 const db = require('../db');
 const appointmentService = require('./appointment.service');
 const { debitWallet, creditWallet } = require('./wallet.service');
-const { getApprovedLawyerById, resolveBookingAmount } = require('./marketplace.service');
+const { getApprovedLawyerById, resolveBookingAmount, resolveBookingDuration } = require('./marketplace.service');
 const notificationService = require('./notification.service');
 const documentService = require('./document.service');
 const paymentService = require('./payment.service');
+const platformSettings = require('./platformSettings.service');
+
+function creditLawyerBooking(lawyerId, grossAmount, consultationType, referenceId) {
+  const payout = platformSettings.applyLawyerPayout(grossAmount);
+  creditWallet(lawyerId, 'lawyer', {
+    amount: payout.netAmount,
+    description: `Consultation booking (${consultationType})${payout.commissionPercent > 0 ? ` · ${payout.commissionPercent}% platform fee` : ''}`,
+    referenceType: 'booking',
+    referenceId,
+  });
+  return payout;
+}
 
 function mapChallan(row) {
   return {
@@ -34,11 +46,12 @@ function fulfillBooking(userId, payment, metadata) {
   }
 
   const amount = payment.amount;
+  const durationMinutes = resolveBookingDuration(Number(lawyerId), consultationType);
   const result = db.prepare(`
     INSERT INTO appointments (
       user_id, lawyer_id, mode, consultation_type, status,
-      scheduled_at, amount, payment_id, notes
-    ) VALUES (?, ?, ?, ?, 'confirmed', ?, ?, ?, ?)
+      scheduled_at, amount, duration_minutes, payment_id, notes
+    ) VALUES (?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?)
   `).run(
     userId,
     Number(lawyerId),
@@ -46,16 +59,12 @@ function fulfillBooking(userId, payment, metadata) {
     consultationType,
     scheduledAt || null,
     amount,
+    durationMinutes,
     payment.id,
     notes || null,
   );
 
-  creditWallet(Number(lawyerId), 'lawyer', {
-    amount,
-    description: `Consultation booking (${consultationType})`,
-    referenceType: 'booking',
-    referenceId: result.lastInsertRowid,
-  });
+  creditLawyerBooking(Number(lawyerId), amount, consultationType, result.lastInsertRowid);
 
   notificationService.createNotification(userId, 'user', {
     title: 'Appointment confirmed',
@@ -229,8 +238,14 @@ function resolveOrderAmount(userId, paymentType, metadata, clientAmount) {
     }
     case 'wallet_topup': {
       const amount = Number(clientAmount);
+      const minTopup = platformSettings.getMinWalletTopup();
       if (!amount || amount <= 0) {
         const error = new Error('Valid amount is required');
+        error.status = 400;
+        throw error;
+      }
+      if (minTopup > 0 && amount < minTopup) {
+        const error = new Error(`Minimum wallet top-up is ₹${minTopup}`);
         error.status = 400;
         throw error;
       }

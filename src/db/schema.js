@@ -231,6 +231,35 @@ function initSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_wallet_transactions_wallet ON wallet_transactions(wallet_id);
     CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, role);
     CREATE INDEX IF NOT EXISTS idx_challans_user ON challans(user_id);
+
+    CREATE TABLE IF NOT EXISTS consultation_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      appointment_id INTEGER NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'waiting'
+        CHECK (status IN ('waiting', 'active', 'ended')),
+      user_joined_at TEXT,
+      lawyer_joined_at TEXT,
+      started_at TEXT,
+      ends_at TEXT,
+      ended_at TEXT,
+      channel_name TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id INTEGER NOT NULL,
+      sender_id INTEGER NOT NULL,
+      sender_role TEXT NOT NULL CHECK (sender_role IN ('user', 'lawyer')),
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (session_id) REFERENCES consultation_sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id);
   `);
 
   const lawyerProfileColumns = [
@@ -263,6 +292,25 @@ function initSchema(db) {
   `);
 
   migratePaymentsTable(db);
+  migrateAppointmentsTable(db);
+}
+
+function migrateAppointmentsTable(db) {
+  try {
+    db.exec('ALTER TABLE appointments ADD COLUMN duration_minutes INTEGER');
+  } catch (error) {
+    if (!String(error.message).includes('duplicate column name')) {
+      throw error;
+    }
+  }
+
+  try {
+    db.exec('ALTER TABLE consultation_sessions ADD COLUMN channel_name TEXT');
+  } catch (error) {
+    if (!String(error.message).includes('duplicate column name')) {
+      throw error;
+    }
+  }
 }
 
 function migratePaymentsTable(db) {

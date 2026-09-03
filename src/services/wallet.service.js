@@ -1,4 +1,5 @@
 const db = require('../db');
+const platformSettings = require('./platformSettings.service');
 
 function getOrCreateWallet(userId, role) {
   let wallet = db
@@ -121,11 +122,7 @@ function addFunds(userId, amount) {
 }
 
 function getMinWithdrawal() {
-  const row = db
-    .prepare('SELECT value FROM platform_settings WHERE key = ?')
-    .get('min_wallet_withdrawal');
-  const parsed = Number.parseFloat(row?.value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 100;
+  return platformSettings.getMinWithdrawal();
 }
 
 function withdrawLawyerBalance(userId, amount) {

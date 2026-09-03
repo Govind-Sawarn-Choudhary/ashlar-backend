@@ -14,6 +14,7 @@ const {
   saveFees,
 } = require('../controllers/lawyer.controller');
 const marketplace = require('../controllers/lawyerMarketplace.controller');
+const consultationController = require('../controllers/consultation.controller');
 
 const uploadsPath = path.join(__dirname, '../../', config.uploadsDir);
 if (!fs.existsSync(uploadsPath)) {
@@ -48,6 +49,14 @@ router.get('/wallet', requireLawyer, marketplace.getWallet);
 router.post('/wallet/withdraw', requireLawyer, marketplace.withdrawWallet);
 router.get('/appointments', requireLawyer, marketplace.listAppointments);
 router.patch('/appointments/:id/status', requireLawyer, marketplace.updateAppointmentStatus);
+
+router.get('/consultations', requireLawyer, consultationController.listConsultations);
+router.get('/appointments/:appointmentId/consultation', requireLawyer, consultationController.getSession);
+router.post('/appointments/:appointmentId/consultation/join', requireLawyer, consultationController.joinSession);
+router.get('/consultations/:sessionId/messages', requireLawyer, consultationController.listMessages);
+router.post('/consultations/:sessionId/messages', requireLawyer, consultationController.sendMessage);
+router.post('/consultations/:sessionId/end', requireLawyer, consultationController.endSession);
+
 router.get('/notifications', requireLawyer, marketplace.listNotifications);
 router.patch('/notifications/read-all', requireLawyer, marketplace.markAllNotificationsRead);
 router.patch('/notifications/:id/read', requireLawyer, marketplace.markNotificationRead);

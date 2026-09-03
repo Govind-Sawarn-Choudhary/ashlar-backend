@@ -105,15 +105,34 @@ function getPaymentByRazorpayOrderId(orderId) {
   return row ? mapPayment(row) : null;
 }
 
-function listPaymentsForAdmin({ limit = 50, offset = 0 } = {}) {
-  const rows = db.prepare(`
+function listPaymentsForAdmin({ limit = 50, offset = 0, status, paymentType } = {}) {
+  let query = `
     SELECT p.*, u.phone AS user_phone, up.full_name AS user_name
     FROM payments p
     JOIN users u ON u.id = p.user_id
     LEFT JOIN user_profiles up ON up.user_id = u.id
-    ORDER BY datetime(p.created_at) DESC
-    LIMIT ? OFFSET ?
-  `).all(limit, offset);
+  `;
+  const params = [];
+  const conditions = [];
+
+  if (status) {
+    conditions.push('p.status = ?');
+    params.push(status);
+  }
+
+  if (paymentType) {
+    conditions.push('p.payment_type = ?');
+    params.push(paymentType);
+  }
+
+  if (conditions.length) {
+    query += ` WHERE ${conditions.join(' AND ')}`;
+  }
+
+  query += ' ORDER BY datetime(p.created_at) DESC LIMIT ? OFFSET ?';
+  params.push(limit, offset);
+
+  const rows = db.prepare(query).all(...params);
 
   return rows.map((row) => ({
     ...mapPayment(row),

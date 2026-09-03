@@ -14,6 +14,9 @@ const config = {
   razorpayEnabled: Boolean(
     process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET,
   ),
+  agoraAppId: process.env.AGORA_APP_ID || '',
+  agoraAppCertificate: process.env.AGORA_APP_CERTIFICATE || '',
+  agoraChatAppKey: process.env.AGORA_CHAT_APP_KEY || '',
 };
 
 module.exports = config;

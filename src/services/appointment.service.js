@@ -1,7 +1,8 @@
 const db = require('../db');
 const { createPayment } = require('./payment.service');
 const { debitWallet, creditWallet } = require('./wallet.service');
-const { getApprovedLawyerById, resolveBookingAmount } = require('./marketplace.service');
+const { getApprovedLawyerById, resolveBookingAmount, resolveBookingDuration } = require('./marketplace.service');
+const platformSettings = require('./platformSettings.service');
 const notificationService = require('./notification.service');
 
 function mapAppointment(row) {
@@ -14,6 +15,7 @@ function mapAppointment(row) {
     status: row.status,
     scheduledAt: row.scheduled_at,
     amount: row.amount,
+    durationMinutes: row.duration_minutes,
     paymentId: row.payment_id,
     notes: row.notes,
     createdAt: row.created_at,
@@ -42,6 +44,8 @@ function createBooking(userId, payload) {
     throw error;
   }
 
+  const durationMinutes = resolveBookingDuration(lawyerId, consultationType);
+
   let payment;
 
   if (payFromWallet) {
@@ -64,8 +68,8 @@ function createBooking(userId, payload) {
   const result = db.prepare(`
     INSERT INTO appointments (
       user_id, lawyer_id, mode, consultation_type, status,
-      scheduled_at, amount, payment_id, notes
-    ) VALUES (?, ?, ?, ?, 'confirmed', ?, ?, ?, ?)
+      scheduled_at, amount, duration_minutes, payment_id, notes
+    ) VALUES (?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?)
   `).run(
     userId,
     lawyerId,
@@ -73,13 +77,14 @@ function createBooking(userId, payload) {
     consultationType,
     scheduledAt || null,
     amount,
+    durationMinutes,
     payment.id,
     notes || null,
   );
 
   creditWallet(lawyerId, 'lawyer', {
-    amount,
-    description: `Consultation booking (${consultationType})`,
+    amount: platformSettings.applyLawyerPayout(amount).netAmount,
+    description: `Consultation booking (${consultationType})${platformSettings.getCommissionPercent() > 0 ? ` · ${platformSettings.getCommissionPercent()}% platform fee` : ''}`,
     referenceType: 'booking',
     referenceId: result.lastInsertRowid,
   });
