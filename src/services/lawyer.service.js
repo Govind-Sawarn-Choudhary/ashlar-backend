@@ -144,13 +144,24 @@ function syncLawyerLocation(userId, fees = []) {
   return getLawyerProfile(userId);
 }
 
+function mapLawyerFeesForClient(fees) {
+  return fees.map((fee) => ({
+    feeType: fee.fee_type,
+    amount: fee.amount,
+    durationLabel: fee.duration_label,
+    durationMinutes: fee.duration_minutes,
+    location: fee.location,
+  }));
+}
+
 function buildLawyerAuthPayload(user) {
   ensureLawyerProfile(user.id);
-  const fees = getLawyerFees(user.id);
-  const profile = syncLawyerLocation(user.id, fees);
+  const rawFees = getLawyerFees(user.id);
+  const fees = mapLawyerFeesForClient(rawFees);
+  const profile = syncLawyerLocation(user.id, rawFees);
   const documents = getLawyerDocuments(user.id);
   const availability = getLawyerAvailability(user.id);
-  const displayLocation = deriveLawyerLocation(profile, fees);
+  const displayLocation = deriveLawyerLocation(profile, rawFees);
 
   return {
     user: {
@@ -471,19 +482,20 @@ function saveLawyerFees(userId, fees) {
   const providedTypes = new Set();
 
   for (const fee of fees) {
-    if (!FEE_TYPES.includes(fee.feeType)) {
-      const error = new Error(`Invalid fee type: ${fee.feeType}`);
+    const feeType = fee.feeType || fee.fee_type;
+    if (!FEE_TYPES.includes(feeType)) {
+      const error = new Error(`Invalid fee type: ${feeType}`);
       error.status = 400;
       throw error;
     }
 
-    providedTypes.add(fee.feeType);
+    providedTypes.add(feeType);
     upsert.run(
       userId,
-      fee.feeType,
-      String(fee.amount),
-      fee.durationLabel,
-      Number(fee.durationMinutes) || 0,
+      feeType,
+      String(fee.amount ?? '').trim(),
+      fee.durationLabel || fee.duration_label || null,
+      Number(fee.durationMinutes ?? fee.duration_minutes) || 0,
       fee.location || null,
     );
   }
