@@ -94,10 +94,20 @@ const completeDocuments = asyncHandler(async (req, res) => {
 });
 
 const saveAvailability = asyncHandler(async (req, res) => {
-  const { selectedDay, selectedDays, repeatWeekly, weekStart, weekEnd, fromTime, toTime } =
-    req.body;
+  const {
+    selectedDay,
+    selectedDays,
+    repeatWeekly,
+    weekStart,
+    weekEnd,
+    fromTime,
+    toTime,
+    scheduleMode,
+    daySchedules,
+  } = req.body;
 
-  if (!fromTime || !toTime) {
+  const mode = scheduleMode === 'custom' ? 'custom' : 'same';
+  if (mode === 'same' && (!fromTime || !toTime)) {
     return res.status(400).json({ error: 'fromTime and toTime are required' });
   }
 
@@ -109,6 +119,8 @@ const saveAvailability = asyncHandler(async (req, res) => {
     weekEnd,
     fromTime,
     toTime,
+    scheduleMode: mode,
+    daySchedules,
   });
 
   const user = {

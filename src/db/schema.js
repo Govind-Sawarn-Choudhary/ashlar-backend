@@ -304,6 +304,22 @@ function migrateLawyerAvailabilityTable(db) {
       throw error;
     }
   }
+
+  try {
+    db.exec("ALTER TABLE lawyer_availability ADD COLUMN schedule_mode TEXT NOT NULL DEFAULT 'same'");
+  } catch (error) {
+    if (!String(error.message).includes('duplicate column name')) {
+      throw error;
+    }
+  }
+
+  try {
+    db.exec('ALTER TABLE lawyer_availability ADD COLUMN day_schedules TEXT');
+  } catch (error) {
+    if (!String(error.message).includes('duplicate column name')) {
+      throw error;
+    }
+  }
 }
 
 function migrateAppointmentsTable(db) {

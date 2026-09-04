@@ -186,6 +186,30 @@ function normalizeSelectedDays(payload) {
   );
 }
 
+function normalizeDaySchedules(payload, selectedDays) {
+  if (!Array.isArray(payload.daySchedules)) {
+    return null;
+  }
+
+  const schedules = payload.daySchedules
+    .map((entry) => ({
+      day: Number(entry.day),
+      fromTime: String(entry.fromTime || entry.from_time || '').trim(),
+      toTime: String(entry.toTime || entry.to_time || '').trim(),
+    }))
+    .filter(
+      (entry) =>
+        selectedDays.includes(entry.day) &&
+        entry.fromTime &&
+        entry.toTime &&
+        entry.day >= 0 &&
+        entry.day <= 6,
+    )
+    .sort((a, b) => a.day - b.day);
+
+  return schedules.length > 0 ? schedules : null;
+}
+
 function mapLawyerAvailabilityForClient(row) {
   if (!row) {
     return null;
@@ -211,14 +235,34 @@ function mapLawyerAvailabilityForClient(row) {
       : [Number(row.selected_day) || 0];
   }
 
+  let daySchedules = null;
+  if (row.day_schedules) {
+    try {
+      const parsed = JSON.parse(row.day_schedules);
+      if (Array.isArray(parsed)) {
+        daySchedules = parsed
+          .map((entry) => ({
+            day: Number(entry.day),
+            fromTime: entry.fromTime || entry.from_time || null,
+            toTime: entry.toTime || entry.to_time || null,
+          }))
+          .filter((entry) => entry.day >= 0 && entry.day <= 6 && entry.fromTime && entry.toTime);
+      }
+    } catch {
+      daySchedules = null;
+    }
+  }
+
   return {
     selectedDay: Number(row.selected_day) || selectedDays[0] || 0,
     selectedDays,
     repeatWeekly: Boolean(row.repeat_weekly),
+    scheduleMode: row.schedule_mode === 'custom' ? 'custom' : 'same',
     weekStart: row.week_start,
     weekEnd: row.week_end,
     fromTime: row.from_time,
     toTime: row.to_time,
+    daySchedules,
   };
 }
 
@@ -497,32 +541,53 @@ function saveLawyerAvailability(userId, payload) {
     throw error;
   }
 
+  const scheduleMode = payload.scheduleMode === 'custom' ? 'custom' : 'same';
+  const daySchedules = scheduleMode === 'custom'
+    ? normalizeDaySchedules(payload, selectedDays)
+    : null;
+
+  if (scheduleMode === 'custom') {
+    if (!daySchedules || daySchedules.length !== selectedDays.length) {
+      const error = new Error('Set start and end time for each selected day');
+      error.status = 400;
+      throw error;
+    }
+  } else if (!payload.fromTime || !payload.toTime) {
+    const error = new Error('fromTime and toTime are required');
+    error.status = 400;
+    throw error;
+  }
+
   const repeatWeekly = payload.repeatWeekly
     ? true
     : selectedDays.length === ALL_WEEK_DAYS.length;
 
   db.prepare(`
     INSERT INTO lawyer_availability (
-      user_id, selected_day, selected_days, repeat_weekly, week_start, week_end, from_time, to_time, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      user_id, selected_day, selected_days, repeat_weekly, schedule_mode, week_start, week_end, from_time, to_time, day_schedules, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(user_id) DO UPDATE SET
       selected_day = excluded.selected_day,
       selected_days = excluded.selected_days,
       repeat_weekly = excluded.repeat_weekly,
+      schedule_mode = excluded.schedule_mode,
       week_start = excluded.week_start,
       week_end = excluded.week_end,
       from_time = excluded.from_time,
       to_time = excluded.to_time,
+      day_schedules = excluded.day_schedules,
       updated_at = datetime('now')
   `).run(
     userId,
     selectedDays[0],
     JSON.stringify(selectedDays),
     repeatWeekly ? 1 : 0,
+    scheduleMode,
     payload.weekStart || null,
     payload.weekEnd || null,
-    payload.fromTime || null,
-    payload.toTime || null,
+    scheduleMode === 'same' ? payload.fromTime || null : daySchedules?.[0]?.fromTime || payload.fromTime || null,
+    scheduleMode === 'same' ? payload.toTime || null : daySchedules?.[0]?.toTime || payload.toTime || null,
+    daySchedules ? JSON.stringify(daySchedules) : null,
   );
 
   const profile = getLawyerProfile(userId);
