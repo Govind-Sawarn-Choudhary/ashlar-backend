@@ -94,7 +94,7 @@ const completeDocuments = asyncHandler(async (req, res) => {
 });
 
 const saveAvailability = asyncHandler(async (req, res) => {
-  const { selectedDay, repeatWeekly, weekStart, weekEnd, fromTime, toTime } =
+  const { selectedDay, selectedDays, repeatWeekly, weekStart, weekEnd, fromTime, toTime } =
     req.body;
 
   if (!fromTime || !toTime) {
@@ -103,6 +103,7 @@ const saveAvailability = asyncHandler(async (req, res) => {
 
   saveLawyerAvailability(req.auth.sub, {
     selectedDay,
+    selectedDays,
     repeatWeekly,
     weekStart,
     weekEnd,

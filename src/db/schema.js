@@ -293,6 +293,17 @@ function initSchema(db) {
 
   migratePaymentsTable(db);
   migrateAppointmentsTable(db);
+  migrateLawyerAvailabilityTable(db);
+}
+
+function migrateLawyerAvailabilityTable(db) {
+  try {
+    db.exec('ALTER TABLE lawyer_availability ADD COLUMN selected_days TEXT');
+  } catch (error) {
+    if (!String(error.message).includes('duplicate column name')) {
+      throw error;
+    }
+  }
 }
 
 function migrateAppointmentsTable(db) {

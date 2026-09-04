@@ -7,6 +7,11 @@ const DOC_TYPES = [
   'passport_photo',
 ];
 
+const REQUIRED_DOC_TYPES = [
+  'bar_council_certificate',
+  'passport_photo',
+];
+
 const FEE_TYPES = ['chat', 'audio', 'video', 'physical'];
 
 function getUserByPhoneAndRole(phone, role) {
@@ -154,6 +159,69 @@ function mapLawyerFeesForClient(fees) {
   }));
 }
 
+const ALL_WEEK_DAYS = [0, 1, 2, 3, 4, 5, 6];
+
+function normalizeSelectedDays(payload) {
+  let days = [];
+
+  if (Array.isArray(payload.selectedDays)) {
+    days = payload.selectedDays;
+  } else if (typeof payload.selectedDays === 'string' && payload.selectedDays.trim()) {
+    try {
+      const parsed = JSON.parse(payload.selectedDays);
+      if (Array.isArray(parsed)) {
+        days = parsed;
+      }
+    } catch {
+      days = [];
+    }
+  }
+
+  if (days.length === 0 && payload.selectedDay !== undefined && payload.selectedDay !== null) {
+    days = [Number(payload.selectedDay) || 0];
+  }
+
+  return [...new Set(days.map((day) => Number(day)).filter((day) => day >= 0 && day <= 6))].sort(
+    (a, b) => a - b,
+  );
+}
+
+function mapLawyerAvailabilityForClient(row) {
+  if (!row) {
+    return null;
+  }
+
+  let selectedDays = [];
+  if (row.selected_days) {
+    try {
+      const parsed = JSON.parse(row.selected_days);
+      if (Array.isArray(parsed)) {
+        selectedDays = parsed
+          .map((day) => Number(day))
+          .filter((day) => day >= 0 && day <= 6);
+      }
+    } catch {
+      selectedDays = [];
+    }
+  }
+
+  if (selectedDays.length === 0) {
+    selectedDays = row.repeat_weekly
+      ? [...ALL_WEEK_DAYS]
+      : [Number(row.selected_day) || 0];
+  }
+
+  return {
+    selectedDay: Number(row.selected_day) || selectedDays[0] || 0,
+    selectedDays,
+    repeatWeekly: Boolean(row.repeat_weekly),
+    weekStart: row.week_start,
+    weekEnd: row.week_end,
+    fromTime: row.from_time,
+    toTime: row.to_time,
+  };
+}
+
 function buildLawyerAuthPayload(user) {
   ensureLawyerProfile(user.id);
   const rawFees = getLawyerFees(user.id);
@@ -194,7 +262,7 @@ function buildLawyerAuthPayload(user) {
       isApproved: profile.verification_status === 'approved',
     },
     documents,
-    availability: availability || null,
+    availability: mapLawyerAvailabilityForClient(availability),
     fees,
     nextRoute: resolveLawyerNextRoute(profile),
   };
@@ -376,7 +444,7 @@ function saveBarEnrollmentDraft(userId, { state = 'UP', enrollmentNumber }) {
 function markDocumentsStepComplete(userId) {
   const docs = getLawyerDocuments(userId);
   const uploadedTypes = new Set(docs.map((doc) => doc.doc_type));
-  const missing = DOC_TYPES.filter((type) => !uploadedTypes.has(type));
+  const missing = REQUIRED_DOC_TYPES.filter((type) => !uploadedTypes.has(type));
 
   if (missing.length > 0) {
     const error = new Error(`Missing documents: ${missing.join(', ')}`);
@@ -422,12 +490,24 @@ function upsertLawyerDocument(userId, docType, fileMeta) {
 function saveLawyerAvailability(userId, payload) {
   ensureLawyerProfile(userId);
 
+  const selectedDays = normalizeSelectedDays(payload);
+  if (selectedDays.length === 0) {
+    const error = new Error('Select at least one working day');
+    error.status = 400;
+    throw error;
+  }
+
+  const repeatWeekly = payload.repeatWeekly
+    ? true
+    : selectedDays.length === ALL_WEEK_DAYS.length;
+
   db.prepare(`
     INSERT INTO lawyer_availability (
-      user_id, selected_day, repeat_weekly, week_start, week_end, from_time, to_time, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      user_id, selected_day, selected_days, repeat_weekly, week_start, week_end, from_time, to_time, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(user_id) DO UPDATE SET
       selected_day = excluded.selected_day,
+      selected_days = excluded.selected_days,
       repeat_weekly = excluded.repeat_weekly,
       week_start = excluded.week_start,
       week_end = excluded.week_end,
@@ -436,8 +516,9 @@ function saveLawyerAvailability(userId, payload) {
       updated_at = datetime('now')
   `).run(
     userId,
-    Number(payload.selectedDay) || 0,
-    payload.repeatWeekly ? 1 : 0,
+    selectedDays[0],
+    JSON.stringify(selectedDays),
+    repeatWeekly ? 1 : 0,
     payload.weekStart || null,
     payload.weekEnd || null,
     payload.fromTime || null,
@@ -660,6 +741,7 @@ function adminApproveBarCouncil(userId, payload = {}) {
 
 module.exports = {
   DOC_TYPES,
+  REQUIRED_DOC_TYPES,
   FEE_TYPES,
   getUserByPhoneAndRole,
   createUser,
