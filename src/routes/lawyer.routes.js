@@ -12,6 +12,7 @@ const {
   completeDocuments,
   saveAvailability,
   saveFees,
+  skipOnboarding,
 } = require('../controllers/lawyer.controller');
 const marketplace = require('../controllers/lawyerMarketplace.controller');
 const consultationController = require('../controllers/consultation.controller');
@@ -41,6 +42,7 @@ router.get('/me', requireLawyer, getMe);
 router.put('/profile/details', requireLawyer, saveDetails);
 router.post('/profile/documents', requireLawyer, upload.single('file'), uploadDocument);
 router.post('/profile/documents/complete', requireLawyer, completeDocuments);
+router.post('/profile/skip-onboarding', requireLawyer, skipOnboarding);
 router.put('/profile/availability', requireLawyer, saveAvailability);
 router.put('/profile/fees', requireLawyer, saveFees);
 

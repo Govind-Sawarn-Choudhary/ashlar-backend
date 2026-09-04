@@ -4,6 +4,7 @@ const {
   saveLawyerDetails,
   saveBarEnrollmentDraft,
   markDocumentsStepComplete,
+  skipOnboardingToDashboard,
   upsertLawyerDocument,
   saveLawyerAvailability,
   saveLawyerFees,
@@ -145,6 +146,18 @@ const saveFees = asyncHandler(async (req, res) => {
   res.json(buildLawyerAuthPayload(user));
 });
 
+const skipOnboarding = asyncHandler(async (req, res) => {
+  skipOnboardingToDashboard(req.auth.sub);
+
+  const user = {
+    id: req.auth.sub,
+    phone: req.auth.phone,
+    role: req.auth.role,
+  };
+
+  res.json(buildLawyerAuthPayload(user));
+});
+
 module.exports = {
   getMe,
   saveDetails,
@@ -152,4 +165,5 @@ module.exports = {
   completeDocuments,
   saveAvailability,
   saveFees,
+  skipOnboarding,
 };

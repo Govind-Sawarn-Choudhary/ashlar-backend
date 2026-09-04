@@ -505,6 +505,35 @@ function markDocumentsStepComplete(userId) {
   return getLawyerProfile(userId);
 }
 
+function skipOnboardingToDashboard(userId) {
+  ensureLawyerProfile(userId);
+
+  const docs = getLawyerDocuments(userId);
+  const uploadedTypes = new Set(docs.map((doc) => doc.doc_type));
+  const missing = REQUIRED_DOC_TYPES.filter((type) => !uploadedTypes.has(type));
+
+  if (missing.length > 0) {
+    const error = new Error(
+      `Upload Bar Council certificate and profile photo before continuing: ${missing.join(', ')}`,
+    );
+    error.status = 400;
+    throw error;
+  }
+
+  const profile = getLawyerProfile(userId);
+  if (profile.onboarding_step === 'complete') {
+    return profile;
+  }
+
+  db.prepare(`
+    UPDATE lawyer_profiles
+    SET onboarding_step = 'complete', updated_at = datetime('now')
+    WHERE user_id = ?
+  `).run(userId);
+
+  return getLawyerProfile(userId);
+}
+
 function upsertLawyerDocument(userId, docType, fileMeta) {
   if (!DOC_TYPES.includes(docType)) {
     const error = new Error('Invalid document type');
@@ -824,6 +853,7 @@ module.exports = {
   assertEnrollmentAvailable,
   normalizeEnrollmentNumber,
   markDocumentsStepComplete,
+  skipOnboardingToDashboard,
   upsertLawyerDocument,
   saveLawyerAvailability,
   saveLawyerFees,
