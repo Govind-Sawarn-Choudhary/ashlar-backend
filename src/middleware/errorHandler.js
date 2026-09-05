@@ -1,6 +1,19 @@
+function isForeignKeyError(err) {
+  return (
+    err?.code === 'SQLITE_CONSTRAINT_FOREIGNKEY'
+    || String(err?.message || '').includes('FOREIGN KEY constraint failed')
+  );
+}
+
 function errorHandler(err, req, res, next) {
   if (res.headersSent) {
     return next(err);
+  }
+
+  if (isForeignKeyError(err)) {
+    return res.status(401).json({
+      error: 'Session expired. Please login again.',
+    });
   }
 
   const status = err.status || 500;

@@ -621,11 +621,15 @@ function saveLawyerAvailability(userId, payload) {
 
   const profile = getLawyerProfile(userId);
   if (profile.onboarding_step !== 'complete') {
+    const verificationStatus = profile.bar_enrollment_verified ? 'approved' : 'pending';
+
     db.prepare(`
       UPDATE lawyer_profiles
-      SET onboarding_step = 'fees', updated_at = datetime('now')
+      SET onboarding_step = 'complete',
+          verification_status = ?,
+          updated_at = datetime('now')
       WHERE user_id = ?
-    `).run(userId);
+    `).run(verificationStatus, userId);
   }
 
   return getLawyerProfile(userId);
