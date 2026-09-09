@@ -57,6 +57,8 @@ router.get('/appointments/:appointmentId/consultation', requireLawyer, consultat
 router.post('/appointments/:appointmentId/consultation/join', requireLawyer, consultationController.joinSession);
 router.get('/consultations/:sessionId/messages', requireLawyer, consultationController.listMessages);
 router.post('/consultations/:sessionId/messages', requireLawyer, consultationController.sendMessage);
+router.get('/consultations/:sessionId/webrtc-signals', requireLawyer, consultationController.listWebRtcSignals);
+router.post('/consultations/:sessionId/webrtc-signals', requireLawyer, consultationController.postWebRtcSignal);
 router.post('/consultations/:sessionId/end', requireLawyer, consultationController.endSession);
 
 router.get('/notifications', requireLawyer, marketplace.listNotifications);

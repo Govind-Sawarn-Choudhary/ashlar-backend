@@ -33,6 +33,8 @@ router.get('/appointments/:appointmentId/consultation', requireAuth, requireUser
 router.post('/appointments/:appointmentId/consultation/join', requireAuth, requireUserRole, consultationController.joinSession);
 router.get('/consultations/:sessionId/messages', requireAuth, requireUserRole, consultationController.listMessages);
 router.post('/consultations/:sessionId/messages', requireAuth, requireUserRole, consultationController.sendMessage);
+router.get('/consultations/:sessionId/webrtc-signals', requireAuth, requireUserRole, consultationController.listWebRtcSignals);
+router.post('/consultations/:sessionId/webrtc-signals', requireAuth, requireUserRole, consultationController.postWebRtcSignal);
 router.post('/consultations/:sessionId/end', requireAuth, requireUserRole, consultationController.endSession);
 
 router.get('/payments/razorpay/config', requireAuth, requireUserRole, paymentController.getRazorpayConfig);

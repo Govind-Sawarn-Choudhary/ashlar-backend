@@ -65,8 +65,12 @@ function seedWelcomeNotification(userId, role) {
   }
 
   createNotification(userId, role, {
-    title: 'Welcome to Ashlar Lawyer Hub',
-    body: 'Your account is ready. Explore lawyers, book consultations, and manage your legal matters.',
+    title: role === 'lawyer'
+      ? 'Welcome to Ashlar Lawyer Hub'
+      : 'Welcome to Ashlar Lawyer Hub',
+    body: role === 'lawyer'
+      ? 'Your lawyer account is ready. Complete your profile, set fees, and start receiving consultations once approved.'
+      : 'Your account is ready. Explore lawyers, book consultations, and manage your legal matters.',
   });
 }
 

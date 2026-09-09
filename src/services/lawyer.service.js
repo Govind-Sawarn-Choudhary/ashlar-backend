@@ -81,6 +81,9 @@ function resolveLawyerNextRoute(profile) {
       if (profile.verification_status === 'rejected') {
         return 'rejected';
       }
+      if (profile.verification_status === 'pending') {
+        return 'pending_approval';
+      }
       return 'dashboard';
     default:
       return 'verify_details';
@@ -527,7 +530,7 @@ function skipOnboardingToDashboard(userId) {
 
   db.prepare(`
     UPDATE lawyer_profiles
-    SET onboarding_step = 'complete', updated_at = datetime('now')
+    SET onboarding_step = 'fees', updated_at = datetime('now')
     WHERE user_id = ?
   `).run(userId);
 
@@ -621,15 +624,11 @@ function saveLawyerAvailability(userId, payload) {
 
   const profile = getLawyerProfile(userId);
   if (profile.onboarding_step !== 'complete') {
-    const verificationStatus = profile.bar_enrollment_verified ? 'approved' : 'pending';
-
     db.prepare(`
       UPDATE lawyer_profiles
-      SET onboarding_step = 'complete',
-          verification_status = ?,
-          updated_at = datetime('now')
+      SET onboarding_step = 'fees', updated_at = datetime('now')
       WHERE user_id = ?
-    `).run(verificationStatus, userId);
+    `).run(userId);
   }
 
   return getLawyerProfile(userId);

@@ -50,6 +50,29 @@ const endSession = asyncHandler(async (req, res) => {
   res.json({ session });
 });
 
+const postWebRtcSignal = asyncHandler(async (req, res) => {
+  const { signalType, payload } = req.body;
+  const signal = consultationService.postWebRtcSignal(
+    Number(req.params.sessionId),
+    req.auth.sub,
+    req.auth.role,
+    signalType,
+    payload,
+  );
+  res.status(201).json({ signal });
+});
+
+const listWebRtcSignals = asyncHandler(async (req, res) => {
+  const afterId = Number.parseInt(req.query.afterId, 10) || 0;
+  const signals = consultationService.listWebRtcSignals(
+    Number(req.params.sessionId),
+    req.auth.sub,
+    req.auth.role,
+    afterId,
+  );
+  res.json({ signals });
+});
+
 const listConsultations = asyncHandler(async (req, res) => {
   const appointments = consultationService.listOnlineAppointments(
     req.auth.sub,
@@ -69,4 +92,6 @@ module.exports = {
   sendMessage,
   endSession,
   listConsultations,
+  postWebRtcSignal,
+  listWebRtcSignals,
 };

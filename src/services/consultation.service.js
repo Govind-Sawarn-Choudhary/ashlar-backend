@@ -1,6 +1,7 @@
 const db = require('../db');
 const appointmentService = require('./appointment.service');
 const agoraService = require('./agora.service');
+const webrtcService = require('./webrtc.service');
 
 function mapSession(row) {
   if (!row) {
@@ -154,6 +155,8 @@ function endSession(sessionId, actorUserId, actorRole = 'user') {
     WHERE id = ?
   `).run(sessionId);
 
+  webrtcService.clearSignals(sessionId);
+
   const appointment = appointmentService.getAppointmentById(session.appointment_id);
   if (appointment && appointment.status === 'confirmed') {
     appointmentService.updateAppointmentStatus(
@@ -233,6 +236,7 @@ function joinSession(appointmentId, actorUserId, actorRole) {
     peerJoined: actorRole === 'lawyer'
       ? Boolean(updated.user_joined_at)
       : Boolean(updated.lawyer_joined_at),
+    mediaProvider: agoraService.isEnabled() ? 'agora' : 'webrtc',
     agora: agoraService.buildJoinCredentials({
       appointmentId,
       actorUserId,
@@ -240,6 +244,11 @@ function joinSession(appointmentId, actorUserId, actorRole) {
       peerUserId,
       peerRole,
     }),
+    webrtc: webrtcService.buildJoinConfig(session.id, actorRole),
+    actor: {
+      id: actorUserId,
+      role: actorRole,
+    },
   };
 }
 
@@ -405,6 +414,26 @@ function adminForceEndSession(sessionId) {
   return endSession(sessionId, null, 'system');
 }
 
+function postWebRtcSignal(sessionId, actorUserId, actorRole, signalType, payload) {
+  assertSessionAccess(sessionId, actorUserId, actorRole);
+  maybeExpireSession(sessionId);
+
+  const refreshed = getSessionRowById(sessionId);
+  if (refreshed.status === 'ended') {
+    const error = new Error('Consultation session has ended');
+    error.status = 400;
+    throw error;
+  }
+
+  return webrtcService.postSignal(sessionId, actorUserId, signalType, payload);
+}
+
+function listWebRtcSignals(sessionId, actorUserId, actorRole, afterId = 0) {
+  assertSessionAccess(sessionId, actorUserId, actorRole);
+  maybeExpireSession(sessionId);
+  return webrtcService.listSignals(sessionId, actorUserId, afterId);
+}
+
 module.exports = {
   getOrCreateSession,
   joinSession,
@@ -416,4 +445,6 @@ module.exports = {
   getSessionDetailForAdmin,
   getSessionByAppointmentForAdmin,
   adminForceEndSession,
+  postWebRtcSignal,
+  listWebRtcSignals,
 };

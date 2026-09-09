@@ -8,14 +8,12 @@ const paymentService = require('./payment.service');
 const platformSettings = require('./platformSettings.service');
 
 function creditLawyerBooking(lawyerId, grossAmount, consultationType, referenceId) {
-  const payout = platformSettings.applyLawyerPayout(grossAmount);
-  creditWallet(lawyerId, 'lawyer', {
-    amount: payout.netAmount,
-    description: `Consultation booking (${consultationType})${payout.commissionPercent > 0 ? ` · ${payout.commissionPercent}% platform fee` : ''}`,
-    referenceType: 'booking',
+  return appointmentService.creditLawyerForBooking(
+    lawyerId,
+    grossAmount,
+    consultationType,
     referenceId,
-  });
-  return payout;
+  );
 }
 
 function mapChallan(row) {
@@ -47,16 +45,25 @@ function fulfillBooking(userId, payment, metadata) {
 
   const amount = payment.amount;
   const durationMinutes = resolveBookingDuration(Number(lawyerId), consultationType);
+  const status = appointmentService.resolveBookingStatus(consultationType, mode);
+
+  if (status === 'pending' && !scheduledAt) {
+    const error = new Error('Meeting date and time are required for in-person bookings');
+    error.status = 400;
+    throw error;
+  }
+
   const result = db.prepare(`
     INSERT INTO appointments (
       user_id, lawyer_id, mode, consultation_type, status,
       scheduled_at, amount, duration_minutes, payment_id, notes
-    ) VALUES (?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     userId,
     Number(lawyerId),
     mode,
     consultationType,
+    status,
     scheduledAt || null,
     amount,
     durationMinutes,
@@ -64,16 +71,16 @@ function fulfillBooking(userId, payment, metadata) {
     notes || null,
   );
 
-  creditLawyerBooking(Number(lawyerId), amount, consultationType, result.lastInsertRowid);
+  if (status === 'confirmed') {
+    creditLawyerBooking(Number(lawyerId), amount, consultationType, result.lastInsertRowid);
+  }
 
-  notificationService.createNotification(userId, 'user', {
-    title: 'Appointment confirmed',
-    body: `Your ${consultationType} appointment with ${lawyer.fullName} is confirmed.`,
-  });
-
-  notificationService.createNotification(Number(lawyerId), 'lawyer', {
-    title: 'New appointment',
-    body: `You have a new ${consultationType} consultation booking.`,
+  appointmentService.sendBookingNotifications({
+    userId,
+    lawyer,
+    consultationType,
+    status,
+    scheduledAt,
   });
 
   return appointmentService.getAppointmentById(result.lastInsertRowid);

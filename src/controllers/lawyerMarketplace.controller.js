@@ -30,7 +30,11 @@ const getWallet = asyncHandler(async (req, res) => {
     filter,
   );
 
-  res.json({ balance: wallet.balance, transactions });
+  res.json({
+    balance: wallet.balance,
+    transactions,
+    minWithdrawal: walletService.getMinWithdrawal(),
+  });
 });
 
 const withdrawWallet = asyncHandler(async (req, res) => {

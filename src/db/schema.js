@@ -294,6 +294,24 @@ function initSchema(db) {
   migratePaymentsTable(db);
   migrateAppointmentsTable(db);
   migrateLawyerAvailabilityTable(db);
+  migrateWebRtcSignalsTable(db);
+}
+
+function migrateWebRtcSignalsTable(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS webrtc_signals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id INTEGER NOT NULL,
+      sender_id INTEGER NOT NULL,
+      signal_type TEXT NOT NULL CHECK (signal_type IN ('offer', 'answer', 'ice')),
+      payload TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (session_id) REFERENCES consultation_sessions(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_webrtc_signals_session
+      ON webrtc_signals(session_id, id);
+  `);
 }
 
 function migrateLawyerAvailabilityTable(db) {

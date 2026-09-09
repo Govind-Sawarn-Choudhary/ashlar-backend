@@ -27,6 +27,50 @@ function mapAppointment(row) {
   };
 }
 
+function resolveBookingStatus(consultationType, mode) {
+  if (consultationType === 'physical' || mode === 'offline') {
+    return 'pending';
+  }
+  return 'confirmed';
+}
+
+function creditLawyerForBooking(lawyerId, grossAmount, consultationType, appointmentId) {
+  const payout = platformSettings.applyLawyerPayout(grossAmount);
+  creditWallet(lawyerId, 'lawyer', {
+    amount: payout.netAmount,
+    description: `Consultation booking (${consultationType})${payout.commissionPercent > 0 ? ` · ${payout.commissionPercent}% platform fee` : ''}`,
+    referenceType: 'booking',
+    referenceId: appointmentId,
+  });
+  return payout;
+}
+
+function sendBookingNotifications({ userId, lawyer, consultationType, status, scheduledAt }) {
+  const scheduleLabel = scheduledAt ? ` on ${scheduledAt}` : '';
+
+  if (status === 'pending') {
+    notificationService.createNotification(userId, 'user', {
+      title: 'Meeting request sent',
+      body: `Your in-person meeting request with ${lawyer.fullName}${scheduleLabel} is awaiting lawyer confirmation.`,
+    });
+    notificationService.createNotification(lawyer.id, 'lawyer', {
+      title: 'New in-person meeting request',
+      body: `Confirm or decline a ${consultationType} meeting request${scheduleLabel}.`,
+    });
+    return;
+  }
+
+  notificationService.createNotification(userId, 'user', {
+    title: 'Appointment confirmed',
+    body: `Your ${consultationType} appointment with ${lawyer.fullName} is confirmed.`,
+  });
+
+  notificationService.createNotification(lawyer.id, 'lawyer', {
+    title: 'New appointment',
+    body: `You have a new ${consultationType} consultation booking.`,
+  });
+}
+
 function createBooking(userId, payload) {
   const { lawyerId, mode, consultationType, scheduledAt, notes, payFromWallet } = payload;
 
@@ -45,6 +89,13 @@ function createBooking(userId, payload) {
   }
 
   const durationMinutes = resolveBookingDuration(lawyerId, consultationType);
+  const status = resolveBookingStatus(consultationType, mode);
+
+  if (status === 'pending' && !scheduledAt) {
+    const error = new Error('Meeting date and time are required for in-person bookings');
+    error.status = 400;
+    throw error;
+  }
 
   let payment;
 
@@ -69,12 +120,13 @@ function createBooking(userId, payload) {
     INSERT INTO appointments (
       user_id, lawyer_id, mode, consultation_type, status,
       scheduled_at, amount, duration_minutes, payment_id, notes
-    ) VALUES (?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     userId,
     lawyerId,
     mode,
     consultationType,
+    status,
     scheduledAt || null,
     amount,
     durationMinutes,
@@ -82,21 +134,16 @@ function createBooking(userId, payload) {
     notes || null,
   );
 
-  creditWallet(lawyerId, 'lawyer', {
-    amount: platformSettings.applyLawyerPayout(amount).netAmount,
-    description: `Consultation booking (${consultationType})${platformSettings.getCommissionPercent() > 0 ? ` · ${platformSettings.getCommissionPercent()}% platform fee` : ''}`,
-    referenceType: 'booking',
-    referenceId: result.lastInsertRowid,
-  });
+  if (status === 'confirmed') {
+    creditLawyerForBooking(lawyerId, amount, consultationType, result.lastInsertRowid);
+  }
 
-  notificationService.createNotification(userId, 'user', {
-    title: 'Appointment confirmed',
-    body: `Your ${consultationType} appointment with ${lawyer.fullName} is confirmed.`,
-  });
-
-  notificationService.createNotification(lawyerId, 'lawyer', {
-    title: 'New appointment',
-    body: `You have a new ${consultationType} consultation booking.`,
+  sendBookingNotifications({
+    userId,
+    lawyer,
+    consultationType,
+    status,
+    scheduledAt,
   });
 
   return getAppointmentById(result.lastInsertRowid);
@@ -192,6 +239,38 @@ function updateAppointmentStatus(appointmentId, status, actorUserId, actorRole) 
     throw error;
   }
 
+  const previousStatus = appointment.status;
+
+  if (status === 'confirmed' && previousStatus === 'pending' && actorRole === 'lawyer') {
+    creditLawyerForBooking(
+      appointment.lawyerId,
+      appointment.amount,
+      appointment.consultationType,
+      appointmentId,
+    );
+    notificationService.createNotification(appointment.userId, 'user', {
+      title: 'Meeting confirmed',
+      body: `Your in-person meeting with ${appointment.lawyerName || 'the lawyer'} has been confirmed.`,
+    });
+  }
+
+  if (status === 'cancelled' && previousStatus === 'pending') {
+    creditWallet(appointment.userId, 'user', {
+      amount: appointment.amount,
+      description: 'Refund for cancelled meeting request',
+      referenceType: 'booking_refund',
+      referenceId: appointmentId,
+    });
+    notificationService.createNotification(appointment.userId, 'user', {
+      title: 'Meeting request declined',
+      body: 'Your in-person meeting request was cancelled. The booking amount has been refunded to your wallet.',
+    });
+    notificationService.createNotification(appointment.lawyerId, 'lawyer', {
+      title: 'Meeting request cancelled',
+      body: 'You declined or cancelled a pending in-person meeting request.',
+    });
+  }
+
   db.prepare(`
     UPDATE appointments
     SET status = ?, updated_at = datetime('now')
@@ -266,4 +345,7 @@ module.exports = {
   updateAppointmentStatus,
   listAllAppointmentsForAdmin,
   getLawyerDashboardStats,
+  resolveBookingStatus,
+  creditLawyerForBooking,
+  sendBookingNotifications,
 };

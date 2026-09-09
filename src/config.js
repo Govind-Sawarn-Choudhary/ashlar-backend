@@ -17,6 +17,9 @@ const config = {
   agoraAppId: process.env.AGORA_APP_ID || '',
   agoraAppCertificate: process.env.AGORA_APP_CERTIFICATE || '',
   agoraChatAppKey: process.env.AGORA_CHAT_APP_KEY || '',
+  webrtcTurnUrl: process.env.WEBRTC_TURN_URL || '',
+  webrtcTurnUsername: process.env.WEBRTC_TURN_USERNAME || '',
+  webrtcTurnCredential: process.env.WEBRTC_TURN_CREDENTIAL || '',
 };
 
 module.exports = config;
