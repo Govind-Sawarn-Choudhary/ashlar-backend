@@ -209,6 +209,7 @@ const updateSettings = asyncHandler(async (req, res) => {
     'min_wallet_topup',
     'min_wallet_withdrawal',
     'challan_test_otp',
+    'min_consult_wallet_minutes',
   ]);
 
   const entries = Object.entries(req.body || {}).filter(([key]) => allowedKeys.has(key));

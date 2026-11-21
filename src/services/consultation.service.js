@@ -331,6 +331,11 @@ function listOnlineAppointments(actorUserId, actorRole, { status, consultationTy
 }
 
 function mapSessionAdmin(row) {
+  const billingModel = row.billing_model || 'prepaid';
+  const ratePerMinute =
+    row.rate_per_minute != null ? Number(row.rate_per_minute) : null;
+  const billedMinutes = row.billed_minutes != null ? Number(row.billed_minutes) : 0;
+
   return {
     id: row.id,
     appointmentId: row.appointment_id,
@@ -346,6 +351,13 @@ function mapSessionAdmin(row) {
     mode: row.mode,
     amount: row.amount,
     durationMinutes: row.duration_minutes,
+    billingModel,
+    ratePerMinute,
+    billedMinutes,
+    meteredCharged:
+      billingModel === 'per_minute' && ratePerMinute
+        ? billedMinutes * ratePerMinute
+        : null,
     appointmentStatus: row.appointment_status,
     userName: row.user_name,
     userPhone: row.user_phone,
@@ -358,6 +370,7 @@ function listSessionsForAdmin({ status, limit = 50, offset = 0 } = {}) {
   let query = `
     SELECT cs.*,
       a.consultation_type, a.mode, a.amount, a.duration_minutes, a.status AS appointment_status,
+      a.billing_model, a.rate_per_minute,
       up.full_name AS user_name, u.phone AS user_phone,
       lp.full_name AS lawyer_name, lu.phone AS lawyer_phone
     FROM consultation_sessions cs
@@ -384,6 +397,7 @@ function getSessionDetailForAdmin(sessionId) {
   const row = db.prepare(`
     SELECT cs.*,
       a.consultation_type, a.mode, a.amount, a.duration_minutes, a.status AS appointment_status,
+      a.billing_model, a.rate_per_minute,
       a.payment_id, a.notes, a.scheduled_at,
       up.full_name AS user_name, u.phone AS user_phone,
       lp.full_name AS lawyer_name, lu.phone AS lawyer_phone
