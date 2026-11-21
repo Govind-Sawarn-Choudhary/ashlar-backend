@@ -6,6 +6,8 @@ const config = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '30d',
   tempOtpPhone: process.env.TEMP_OTP_PHONE || '8521429014',
   tempOtpCode: process.env.TEMP_OTP_CODE || '123456',
+  /** strict = single test phone; staging = any phone accepts TEMP_OTP_CODE (pre-DLT deploys) */
+  otpMode: (process.env.OTP_MODE || 'staging').toLowerCase(),
   adminEmail: process.env.ADMIN_EMAIL || 'admin@ashlarlaw.com',
   adminPassword: process.env.ADMIN_PASSWORD || 'admin123',
   uploadsDir: 'uploads',

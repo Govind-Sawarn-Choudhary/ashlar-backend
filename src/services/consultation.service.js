@@ -1,5 +1,6 @@
 const db = require('../db');
 const appointmentService = require('./appointment.service');
+const consultationBilling = require('./consultationBilling.service');
 const agoraService = require('./agora.service');
 const webrtcService = require('./webrtc.service');
 
@@ -18,6 +19,7 @@ function mapSession(row) {
     endsAt: row.ends_at,
     endedAt: row.ended_at,
     channelName: row.channel_name,
+    billedMinutes: row.billed_minutes || 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -227,12 +229,18 @@ function joinSession(appointmentId, actorUserId, actorRole) {
   maybeExpireSession(session.id);
 
   const updated = getSessionRowById(session.id);
+  const freshAppointment = appointmentService.getAppointmentById(appointmentId);
   const peerUserId = actorRole === 'lawyer' ? appointment.userId : appointment.lawyerId;
   const peerRole = actorRole === 'lawyer' ? 'user' : 'lawyer';
 
   return {
-    appointment,
+    appointment: freshAppointment,
     session: mapSession(updated),
+    billing: consultationBilling.buildBillingSnapshot(
+      freshAppointment,
+      updated,
+      actorRole,
+    ),
     peerJoined: actorRole === 'lawyer'
       ? Boolean(updated.user_joined_at)
       : Boolean(updated.lawyer_joined_at),
@@ -434,9 +442,19 @@ function listWebRtcSignals(sessionId, actorUserId, actorRole, afterId = 0) {
   return webrtcService.listSignals(sessionId, actorUserId, afterId);
 }
 
+function billConsultationMinute(sessionId, actorUserId, actorRole) {
+  return consultationBilling.billConsultationMinute(
+    sessionId,
+    actorUserId,
+    actorRole,
+    endSession,
+  );
+}
+
 module.exports = {
   getOrCreateSession,
   joinSession,
+  billConsultationMinute,
   listMessages,
   sendMessage,
   endSession,

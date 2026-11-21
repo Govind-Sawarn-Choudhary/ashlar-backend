@@ -29,6 +29,14 @@ function getMinWithdrawal() {
   return parsed;
 }
 
+function getMinConsultWalletMinutes() {
+  const parsed = Number.parseInt(getSetting('min_consult_wallet_minutes', '5'), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 5;
+  }
+  return parsed;
+}
+
 function applyLawyerPayout(grossAmount) {
   const commissionPercent = getCommissionPercent();
   const commissionAmount = (grossAmount * commissionPercent) / 100;
@@ -60,6 +68,10 @@ function getSettingsMeta() {
       enforced: true,
       description: 'Test OTP for challan verification flow',
     },
+    min_consult_wallet_minutes: {
+      enforced: true,
+      description: 'Minimum wallet balance window before starting per-minute consult',
+    },
   };
 }
 
@@ -68,6 +80,7 @@ module.exports = {
   getCommissionPercent,
   getMinWalletTopup,
   getMinWithdrawal,
+  getMinConsultWalletMinutes,
   applyLawyerPayout,
   getSettingsMeta,
 };

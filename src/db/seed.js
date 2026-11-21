@@ -71,6 +71,7 @@ function seedMarketplaceData(db) {
     ON CONFLICT(key) DO NOTHING
   `);
   upsertSetting.run('min_wallet_withdrawal', '100');
+  upsertSetting.run('min_consult_wallet_minutes', '5');
 }
 
 module.exports = {

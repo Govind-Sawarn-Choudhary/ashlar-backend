@@ -85,10 +85,36 @@ function purchaseProduct(userId, productId, { payFromWallet } = {}) {
   return { product, payment };
 }
 
+function listUserOrders(userId) {
+  const rows = db
+    .prepare(`
+      SELECT id, amount, status, reference, metadata, created_at
+      FROM payments
+      WHERE user_id = ? AND payment_type = 'document' AND status = 'completed'
+      ORDER BY datetime(created_at) DESC
+      LIMIT 100
+    `)
+    .all(userId);
+
+  return rows.map((row) => {
+    const metadata = row.metadata ? JSON.parse(row.metadata) : {};
+    return {
+      paymentId: row.id,
+      amount: row.amount,
+      status: row.status,
+      reference: row.reference,
+      productId: metadata.productId ?? null,
+      productName: metadata.productName ?? 'Legal document',
+      createdAt: row.created_at,
+    };
+  });
+}
+
 module.exports = {
   listCategories,
   listProductsByCategory,
   getCategoryBySlug,
   getProductById,
   purchaseProduct,
+  listUserOrders,
 };

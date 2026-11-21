@@ -293,6 +293,7 @@ function initSchema(db) {
 
   migratePaymentsTable(db);
   migrateAppointmentsTable(db);
+  migrateConsultationBillingColumns(db);
   migrateLawyerAvailabilityTable(db);
   migrateWebRtcSignalsTable(db);
 }
@@ -354,6 +355,36 @@ function migrateAppointmentsTable(db) {
   } catch (error) {
     if (!String(error.message).includes('duplicate column name')) {
       throw error;
+    }
+  }
+}
+
+function migrateConsultationBillingColumns(db) {
+  const appointmentCols = [
+    "ALTER TABLE appointments ADD COLUMN billing_model TEXT NOT NULL DEFAULT 'prepaid'",
+    'ALTER TABLE appointments ADD COLUMN rate_per_minute REAL',
+  ];
+  for (const sql of appointmentCols) {
+    try {
+      db.exec(sql);
+    } catch (error) {
+      if (!String(error.message).includes('duplicate column name')) {
+        throw error;
+      }
+    }
+  }
+
+  const sessionCols = [
+    'ALTER TABLE consultation_sessions ADD COLUMN last_billed_at TEXT',
+    'ALTER TABLE consultation_sessions ADD COLUMN billed_minutes INTEGER NOT NULL DEFAULT 0',
+  ];
+  for (const sql of sessionCols) {
+    try {
+      db.exec(sql);
+    } catch (error) {
+      if (!String(error.message).includes('duplicate column name')) {
+        throw error;
+      }
     }
   }
 }

@@ -1,7 +1,11 @@
 const config = require('../config');
 
+function isStagingOtp() {
+  return config.otpMode === 'staging';
+}
+
 /**
- * Temporary OTP provider — swap with DLT/SMS when license is ready.
+ * OTP provider — set OTP_MODE=staging on cloud until DLT/SMS is live.
  */
 function sendOtp(phone) {
   const normalized = String(phone).trim();
@@ -12,16 +16,15 @@ function sendOtp(phone) {
     throw error;
   }
 
-  // Until DLT: only the configured test number receives a valid OTP.
-  if (normalized !== config.tempOtpPhone) {
+  if (!isStagingOtp() && normalized !== config.tempOtpPhone) {
     const error = new Error(
-      'OTP is temporarily enabled only for the test number. Use DLT number when live.',
+      'OTP is temporarily enabled only for the test number. Set OTP_MODE=staging on server or use DLT SMS.',
     );
     error.status = 403;
     throw error;
   }
 
-  console.log(`[OTP] ${normalized} → ${config.tempOtpCode} (temporary test OTP)`);
+  console.log(`[OTP] ${normalized} → ${config.tempOtpCode}`);
 
   return {
     phone: normalized,
@@ -33,6 +36,15 @@ function sendOtp(phone) {
 function verifyOtp(phone, otp) {
   const normalizedPhone = String(phone).trim();
   const normalizedOtp = String(otp).trim();
+
+  if (isStagingOtp()) {
+    if (normalizedOtp !== config.tempOtpCode) {
+      const error = new Error('Invalid OTP');
+      error.status = 401;
+      throw error;
+    }
+    return true;
+  }
 
   if (normalizedPhone !== config.tempOtpPhone || normalizedOtp !== config.tempOtpCode) {
     const error = new Error('Invalid OTP');

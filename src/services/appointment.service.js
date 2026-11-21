@@ -1,11 +1,15 @@
 const db = require('../db');
 const { createPayment } = require('./payment.service');
-const { debitWallet, creditWallet } = require('./wallet.service');
+const { debitWallet, creditWallet, getWalletSummary } = require('./wallet.service');
 const { getApprovedLawyerById, resolveBookingAmount, resolveBookingDuration } = require('./marketplace.service');
 const platformSettings = require('./platformSettings.service');
 const notificationService = require('./notification.service');
 
 function mapAppointment(row) {
+  const billingModel = row.billing_model || 'prepaid';
+  const ratePerMinute =
+    row.rate_per_minute != null ? Number(row.rate_per_minute) : null;
+
   return {
     id: row.id,
     userId: row.user_id,
@@ -18,6 +22,8 @@ function mapAppointment(row) {
     durationMinutes: row.duration_minutes,
     paymentId: row.payment_id,
     notes: row.notes,
+    billingModel,
+    ratePerMinute,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     userName: row.user_name,
@@ -25,6 +31,10 @@ function mapAppointment(row) {
     lawyerName: row.lawyer_name,
     lawyerPhone: row.lawyer_phone,
   };
+}
+
+function isOnlineMeteredConsultation(consultationType, mode) {
+  return mode === 'online' && consultationType !== 'physical';
 }
 
 function resolveBookingStatus(consultationType, mode) {
@@ -81,9 +91,9 @@ function createBooking(userId, payload) {
     throw error;
   }
 
-  const amount = resolveBookingAmount(lawyerId, consultationType);
-  if (amount <= 0) {
-    const error = new Error('Invalid booking amount');
+  const ratePerMinute = resolveBookingAmount(lawyerId, consultationType);
+  if (ratePerMinute <= 0) {
+    const error = new Error('Invalid consultation rate');
     error.status = 400;
     throw error;
   }
@@ -97,6 +107,59 @@ function createBooking(userId, payload) {
     throw error;
   }
 
+  if (isOnlineMeteredConsultation(consultationType, mode)) {
+    if (payFromWallet) {
+      const error = new Error(
+        'Online consultations bill per minute from wallet during the session. Top up wallet and book again.',
+      );
+      error.status = 400;
+      throw error;
+    }
+
+    const minMinutes = platformSettings.getMinConsultWalletMinutes();
+    const wallet = getWalletSummary(userId, 'user');
+    const minRequired = ratePerMinute * minMinutes;
+    if (wallet.balance < minRequired) {
+      const error = new Error(
+        `Wallet needs at least ₹${Math.ceil(minRequired)} (≈${minMinutes} min at ₹${ratePerMinute}/min). Please top up.`,
+      );
+      error.status = 402;
+      throw error;
+    }
+
+    const result = db.prepare(`
+      INSERT INTO appointments (
+        user_id, lawyer_id, mode, consultation_type, status,
+        scheduled_at, amount, duration_minutes, payment_id, notes,
+        billing_model, rate_per_minute
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      userId,
+      lawyerId,
+      mode,
+      consultationType,
+      status,
+      scheduledAt || null,
+      0,
+      durationMinutes,
+      null,
+      notes || null,
+      'per_minute',
+      ratePerMinute,
+    );
+
+    sendBookingNotifications({
+      userId,
+      lawyer,
+      consultationType,
+      status,
+      scheduledAt,
+    });
+
+    return getAppointmentById(result.lastInsertRowid);
+  }
+
+  const amount = ratePerMinute;
   let payment;
 
   if (payFromWallet) {
@@ -119,8 +182,9 @@ function createBooking(userId, payload) {
   const result = db.prepare(`
     INSERT INTO appointments (
       user_id, lawyer_id, mode, consultation_type, status,
-      scheduled_at, amount, duration_minutes, payment_id, notes
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      scheduled_at, amount, duration_minutes, payment_id, notes,
+      billing_model, rate_per_minute
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     userId,
     lawyerId,
@@ -132,6 +196,8 @@ function createBooking(userId, payload) {
     durationMinutes,
     payment.id,
     notes || null,
+    'prepaid',
+    null,
   );
 
   if (status === 'confirmed') {
@@ -241,6 +307,12 @@ function updateAppointmentStatus(appointmentId, status, actorUserId, actorRole) 
 
   const previousStatus = appointment.status;
 
+  if (status === 'cancelled' && !['pending', 'confirmed'].includes(previousStatus)) {
+    const error = new Error('This appointment cannot be cancelled');
+    error.status = 400;
+    throw error;
+  }
+
   if (status === 'confirmed' && previousStatus === 'pending' && actorRole === 'lawyer') {
     creditLawyerForBooking(
       appointment.lawyerId,
@@ -254,20 +326,83 @@ function updateAppointmentStatus(appointmentId, status, actorUserId, actorRole) 
     });
   }
 
-  if (status === 'cancelled' && previousStatus === 'pending') {
+  function refundUserBooking(reasonTitle, reasonBody) {
     creditWallet(appointment.userId, 'user', {
       amount: appointment.amount,
-      description: 'Refund for cancelled meeting request',
+      description: reasonTitle,
       referenceType: 'booking_refund',
       referenceId: appointmentId,
     });
     notificationService.createNotification(appointment.userId, 'user', {
-      title: 'Meeting request declined',
-      body: 'Your in-person meeting request was cancelled. The booking amount has been refunded to your wallet.',
+      title: reasonTitle,
+      body: reasonBody,
     });
+  }
+
+  function clawBackLawyerCredit() {
+    const credit = db.prepare(`
+      SELECT wt.amount
+      FROM wallet_transactions wt
+      JOIN wallets w ON w.id = wt.wallet_id
+      WHERE w.user_id = ? AND w.role = 'lawyer'
+        AND wt.type = 'credit'
+        AND wt.reference_type = 'booking'
+        AND wt.reference_id = ?
+      ORDER BY wt.id DESC
+      LIMIT 1
+    `).get(appointment.lawyerId, appointmentId);
+
+    if (!credit) {
+      return;
+    }
+
+    const balanceRow = db
+      .prepare('SELECT balance FROM wallets WHERE user_id = ? AND role = ?')
+      .get(appointment.lawyerId, 'lawyer');
+    const balance = balanceRow?.balance ?? 0;
+    const clawback = Math.min(Number(credit.amount), balance);
+    if (clawback <= 0) {
+      return;
+    }
+
+    debitWallet(appointment.lawyerId, 'lawyer', {
+      amount: clawback,
+      description: 'Booking cancelled — earnings adjustment',
+      referenceType: 'booking_reversal',
+      referenceId: appointmentId,
+    });
+  }
+
+  if (status === 'cancelled' && previousStatus === 'pending') {
+    refundUserBooking(
+      'Meeting request cancelled',
+      'Your in-person meeting request was cancelled. The booking amount has been refunded to your wallet.',
+    );
     notificationService.createNotification(appointment.lawyerId, 'lawyer', {
       title: 'Meeting request cancelled',
-      body: 'You declined or cancelled a pending in-person meeting request.',
+      body:
+        actorRole === 'user'
+          ? 'The client cancelled their in-person meeting request.'
+          : 'You declined or cancelled a pending in-person meeting request.',
+    });
+  }
+
+  if (status === 'cancelled' && previousStatus === 'confirmed') {
+    if (appointment.billingModel !== 'per_minute' && appointment.amount > 0) {
+      refundUserBooking(
+        'Appointment cancelled',
+        'Your appointment was cancelled. The booking amount has been refunded to your wallet.',
+      );
+      clawBackLawyerCredit();
+    }
+    const peerId = actorRole === 'user' ? appointment.lawyerId : appointment.userId;
+    const peerRole = actorRole === 'user' ? 'lawyer' : 'user';
+    notificationService.createNotification(peerId, peerRole, {
+      title: 'Appointment cancelled',
+      body:
+        actorRole === 'user'
+          ? 'The client cancelled a confirmed appointment.'
+          : 'Your lawyer cancelled the appointment.',
     });
   }
 

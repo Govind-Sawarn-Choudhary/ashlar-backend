@@ -60,6 +60,11 @@ router.post('/consultations/:sessionId/messages', requireLawyer, consultationCon
 router.get('/consultations/:sessionId/webrtc-signals', requireLawyer, consultationController.listWebRtcSignals);
 router.post('/consultations/:sessionId/webrtc-signals', requireLawyer, consultationController.postWebRtcSignal);
 router.post('/consultations/:sessionId/end', requireLawyer, consultationController.endSession);
+router.post(
+  '/consultations/:sessionId/bill-minute',
+  requireLawyer,
+  consultationController.billConsultationMinute,
+);
 
 router.get('/notifications', requireLawyer, marketplace.listNotifications);
 router.patch('/notifications/read-all', requireLawyer, marketplace.markAllNotificationsRead);

@@ -50,6 +50,15 @@ const endSession = asyncHandler(async (req, res) => {
   res.json({ session });
 });
 
+const billConsultationMinute = asyncHandler(async (req, res) => {
+  const result = consultationService.billConsultationMinute(
+    Number(req.params.sessionId),
+    req.auth.sub,
+    req.auth.role,
+  );
+  res.json(result);
+});
+
 const postWebRtcSignal = asyncHandler(async (req, res) => {
   const { signalType, payload } = req.body;
   const signal = consultationService.postWebRtcSignal(
@@ -91,6 +100,7 @@ module.exports = {
   listMessages,
   sendMessage,
   endSession,
+  billConsultationMinute,
   listConsultations,
   postWebRtcSignal,
   listWebRtcSignals,

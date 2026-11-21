@@ -108,6 +108,22 @@ const listAppointments = asyncHandler(async (req, res) => {
   res.json({ appointments });
 });
 
+const updateAppointmentStatus = asyncHandler(async (req, res) => {
+  const { status } = req.body;
+  if (!status) {
+    return res.status(400).json({ error: 'status is required' });
+  }
+
+  const appointment = appointmentService.updateAppointmentStatus(
+    Number(req.params.id),
+    status,
+    req.auth.sub,
+    'user',
+  );
+
+  res.json({ appointment });
+});
+
 const getPayment = asyncHandler(async (req, res) => {
   const payment = paymentService.getPayment(req.auth.sub, Number(req.params.id));
   if (!payment) {
@@ -173,6 +189,11 @@ const markNotificationRead = asyncHandler(async (req, res) => {
   res.json({ notification });
 });
 
+const listDocumentOrders = asyncHandler(async (req, res) => {
+  const orders = documentService.listUserOrders(req.auth.sub);
+  res.json({ orders });
+});
+
 const listDocumentCategories = asyncHandler(async (_req, res) => {
   const categories = documentService.listCategories();
   res.json({ categories });
@@ -228,6 +249,7 @@ module.exports = {
   toggleFavourite,
   createBooking,
   listAppointments,
+  updateAppointmentStatus,
   getPayment,
   lookupChallan,
   sendChallanOtp,
@@ -237,6 +259,7 @@ module.exports = {
   listNotifications,
   markNotificationRead,
   markAllNotificationsRead,
+  listDocumentOrders,
   listDocumentCategories,
   listDocumentProducts,
   purchaseDocument,

@@ -27,6 +27,12 @@ router.post('/lawyers/:id/favourite', requireAuth, requireUserRole, marketplace.
 
 router.post('/bookings', requireAuth, requireUserRole, marketplace.createBooking);
 router.get('/appointments', requireAuth, requireUserRole, marketplace.listAppointments);
+router.patch(
+  '/appointments/:id/status',
+  requireAuth,
+  requireUserRole,
+  marketplace.updateAppointmentStatus,
+);
 
 router.get('/consultations', requireAuth, requireUserRole, consultationController.listConsultations);
 router.get('/appointments/:appointmentId/consultation', requireAuth, requireUserRole, consultationController.getSession);
@@ -36,6 +42,12 @@ router.post('/consultations/:sessionId/messages', requireAuth, requireUserRole, 
 router.get('/consultations/:sessionId/webrtc-signals', requireAuth, requireUserRole, consultationController.listWebRtcSignals);
 router.post('/consultations/:sessionId/webrtc-signals', requireAuth, requireUserRole, consultationController.postWebRtcSignal);
 router.post('/consultations/:sessionId/end', requireAuth, requireUserRole, consultationController.endSession);
+router.post(
+  '/consultations/:sessionId/bill-minute',
+  requireAuth,
+  requireUserRole,
+  consultationController.billConsultationMinute,
+);
 
 router.get('/payments/razorpay/config', requireAuth, requireUserRole, paymentController.getRazorpayConfig);
 router.post('/payments/razorpay/order', requireAuth, requireUserRole, paymentController.createRazorpayOrder);
@@ -52,6 +64,7 @@ router.get('/notifications', requireAuth, requireUserRole, marketplace.listNotif
 router.patch('/notifications/read-all', requireAuth, requireUserRole, marketplace.markAllNotificationsRead);
 router.patch('/notifications/:id/read', requireAuth, requireUserRole, marketplace.markNotificationRead);
 
+router.get('/documents/orders', requireAuth, requireUserRole, marketplace.listDocumentOrders);
 router.get('/documents/categories', requireAuth, requireUserRole, marketplace.listDocumentCategories);
 router.get('/documents/categories/:categoryId/products', requireAuth, requireUserRole, marketplace.listDocumentProducts);
 router.post('/documents/purchase', requireAuth, requireUserRole, marketplace.purchaseDocument);

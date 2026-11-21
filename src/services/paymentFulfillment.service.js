@@ -29,6 +29,14 @@ function mapChallan(row) {
 function fulfillBooking(userId, payment, metadata) {
   const { lawyerId, mode, consultationType, scheduledAt, notes } = metadata;
 
+  if (appointmentService.isOnlineMeteredConsultation(consultationType, mode)) {
+    const error = new Error(
+      'Online chat/call/video uses per-minute wallet billing. Book without Razorpay payment.',
+    );
+    error.status = 400;
+    throw error;
+  }
+
   const lawyer = getApprovedLawyerById(Number(lawyerId), userId);
   if (!lawyer) {
     const error = new Error('Lawyer not available for booking');
@@ -56,8 +64,9 @@ function fulfillBooking(userId, payment, metadata) {
   const result = db.prepare(`
     INSERT INTO appointments (
       user_id, lawyer_id, mode, consultation_type, status,
-      scheduled_at, amount, duration_minutes, payment_id, notes
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      scheduled_at, amount, duration_minutes, payment_id, notes,
+      billing_model, rate_per_minute
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     userId,
     Number(lawyerId),
@@ -69,6 +78,8 @@ function fulfillBooking(userId, payment, metadata) {
     durationMinutes,
     payment.id,
     notes || null,
+    'prepaid',
+    null,
   );
 
   if (status === 'confirmed') {
@@ -207,6 +218,18 @@ function fulfillPayment(userId, payment) {
 function resolveOrderAmount(userId, paymentType, metadata, clientAmount) {
   switch (paymentType) {
     case 'booking': {
+      if (
+        appointmentService.isOnlineMeteredConsultation(
+          metadata.consultationType,
+          metadata.mode || 'online',
+        )
+      ) {
+        const error = new Error(
+          'Online consultations are billed per minute from wallet — not via Razorpay booking.',
+        );
+        error.status = 400;
+        throw error;
+      }
       const amount = resolveBookingAmount(
         Number(metadata.lawyerId),
         metadata.consultationType,
