@@ -8,6 +8,8 @@ const config = {
   tempOtpCode: process.env.TEMP_OTP_CODE || '123456',
   /** strict = single test phone; staging = any phone accepts TEMP_OTP_CODE (pre-DLT deploys) */
   otpMode: (process.env.OTP_MODE || 'staging').toLowerCase(),
+  /** staging = direct wallet credit for testing; razorpay = checkout required */
+  walletTopupMode: (process.env.WALLET_TOPUP_MODE || 'staging').toLowerCase(),
   adminEmail: process.env.ADMIN_EMAIL || 'admin@ashlarlaw.com',
   adminPassword: process.env.ADMIN_PASSWORD || 'admin123',
   uploadsDir: 'uploads',

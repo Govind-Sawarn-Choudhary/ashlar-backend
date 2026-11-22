@@ -1,4 +1,6 @@
 const asyncHandler = require('../utils/asyncHandler');
+const config = require('../config');
+const platformSettings = require('../services/platformSettings.service');
 const { buildUserAuthPayload } = require('../services/user.service');
 const walletService = require('../services/wallet.service');
 const paymentService = require('../services/payment.service');
@@ -38,8 +40,26 @@ const getWallet = asyncHandler(async (req, res) => {
 });
 
 const addWalletFunds = asyncHandler(async (req, res) => {
-  return res.status(400).json({
-    error: 'Use POST /api/user/payments/razorpay/order with paymentType wallet_topup',
+  if (config.walletTopupMode !== 'staging') {
+    return res.status(400).json({
+      error: 'Use POST /api/user/payments/razorpay/order with paymentType wallet_topup',
+    });
+  }
+
+  const amount = Number(req.body?.amount);
+  const minTopup = platformSettings.getMinWalletTopup();
+  if (!amount || amount <= 0) {
+    return res.status(400).json({ error: 'Valid amount is required' });
+  }
+  if (minTopup > 0 && amount < minTopup) {
+    return res.status(400).json({ error: `Minimum wallet top-up is ₹${minTopup}` });
+  }
+
+  walletService.addFunds(req.auth.sub, amount);
+  const wallet = walletService.getWalletSummary(req.auth.sub, 'user');
+  res.json({
+    balance: wallet.balance,
+    message: 'Wallet credited (staging top-up)',
   });
 });
 

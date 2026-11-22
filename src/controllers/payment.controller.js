@@ -1,5 +1,6 @@
 const asyncHandler = require('../utils/asyncHandler');
 const config = require('../config');
+const platformSettings = require('../services/platformSettings.service');
 const paymentService = require('../services/payment.service');
 const razorpayService = require('../services/razorpay.service');
 const paymentFulfillment = require('../services/paymentFulfillment.service');
@@ -10,6 +11,8 @@ const getRazorpayConfig = asyncHandler(async (_req, res) => {
     enabled: config.razorpayEnabled,
     keyId: config.razorpayEnabled ? config.razorpayKeyId : null,
     currency: 'INR',
+    walletTopupMode: config.walletTopupMode,
+    minWalletTopup: platformSettings.getMinWalletTopup(),
   });
 });
 
