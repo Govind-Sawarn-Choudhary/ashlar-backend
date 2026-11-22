@@ -36,7 +36,11 @@ const getWallet = asyncHandler(async (req, res) => {
     filter,
   );
 
-  res.json({ balance: wallet.balance, transactions });
+  res.json({
+    balance: wallet.balance,
+    transactions,
+    minWalletTopup: platformSettings.getMinWalletTopup(),
+  });
 });
 
 const addWalletFunds = asyncHandler(async (req, res) => {
