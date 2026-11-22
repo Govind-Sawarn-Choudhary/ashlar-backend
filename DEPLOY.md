@@ -18,7 +18,7 @@ nano .env
 | `JWT_SECRET` | Strong random string |
 | `OTP_MODE` | `staging` until DLT SMS (any phone + `TEMP_OTP_CODE`) |
 | `TEMP_OTP_CODE` | e.g. `123456` — shown in server logs when OTP sent |
-| `WALLET_TOPUP_MODE` | `staging` for instant wallet credit while testing; `razorpay` for live |
+| `WALLET_TOPUP_MODE` | `razorpay` (default). Use `staging` only on dev servers — not for clients |
 | `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | Booking & wallet payments |
 | `AGORA_APP_ID` / `AGORA_APP_CERTIFICATE` | Video/voice (optional) |
 | `AGORA_CHAT_APP_KEY` | Consult chat (optional) |
