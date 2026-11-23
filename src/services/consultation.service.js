@@ -259,7 +259,7 @@ function joinSession(appointmentId, actorUserId, actorRole) {
   const needsRtc = ['audio', 'video'].includes(freshAppointment.consultationType);
   if (needsRtc && !agoraService.isEnabled()) {
     const error = new Error(
-      'Audio/video calls require Agora on the server. Please contact support.',
+      'Audio and video calls are temporarily unavailable. Please contact support.',
     );
     error.status = 503;
     throw error;

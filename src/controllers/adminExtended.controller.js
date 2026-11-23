@@ -136,6 +136,8 @@ const getIntegrations = asyncHandler(async (_req, res) => {
       enabled: agoraService.isEnabled(),
       appIdConfigured: Boolean(config.agoraAppId),
       certificateConfigured: Boolean(config.agoraAppCertificate),
+      certificateLooksValid: agoraService.hasRtcCertificate(),
+      rtcMode: agoraService.hasRtcCertificate() ? 'token' : 'tokenless',
       chatAppKeyConfigured: Boolean(config.agoraChatAppKey),
     },
     otp: {
