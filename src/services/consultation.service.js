@@ -256,6 +256,15 @@ function joinSession(appointmentId, actorUserId, actorRole) {
   const peerUserId = actorRole === 'lawyer' ? appointment.userId : appointment.lawyerId;
   const peerRole = actorRole === 'lawyer' ? 'user' : 'lawyer';
 
+  const needsRtc = ['audio', 'video'].includes(freshAppointment.consultationType);
+  if (needsRtc && !agoraService.isEnabled()) {
+    const error = new Error(
+      'Audio/video calls require Agora on the server. Please contact support.',
+    );
+    error.status = 503;
+    throw error;
+  }
+
   return {
     appointment: freshAppointment,
     session: mapSession(updated),
@@ -267,7 +276,7 @@ function joinSession(appointmentId, actorUserId, actorRole) {
     peerJoined: actorRole === 'lawyer'
       ? Boolean(updated.user_joined_at)
       : Boolean(updated.lawyer_joined_at),
-    mediaProvider: agoraService.isEnabled() ? 'agora' : 'webrtc',
+    mediaProvider: 'agora',
     agora: agoraService.buildJoinCredentials({
       appointmentId,
       actorUserId,
@@ -275,7 +284,7 @@ function joinSession(appointmentId, actorUserId, actorRole) {
       peerUserId,
       peerRole,
     }),
-    webrtc: webrtcService.buildJoinConfig(session.id, actorRole),
+    webrtc: { enabled: false },
     actor: {
       id: actorUserId,
       role: actorRole,
