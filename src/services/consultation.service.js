@@ -163,6 +163,25 @@ function endSession(sessionId, actorUserId, actorRole = 'user') {
   webrtcService.clearSignals(sessionId);
 
   const appointment = appointmentService.getAppointmentById(session.appointment_id);
+  if (appointment && actorUserId != null) {
+    const peerUserId =
+      actorRole === 'lawyer' ? appointment.userId : appointment.lawyerId;
+    const peerRole = actorRole === 'lawyer' ? 'user' : 'lawyer';
+    const label =
+      appointment.consultationType === 'video'
+        ? 'Video call'
+        : appointment.consultationType === 'audio'
+          ? 'Audio call'
+          : 'Chat';
+    notificationService.createNotification(peerUserId, peerRole, {
+      title: `${label} ended`,
+      body: 'The other party ended the session.',
+      category: 'consultation',
+      actionType: 'consultation',
+      actionId: appointment.id,
+    });
+  }
+
   if (appointment && appointment.status === 'confirmed') {
     appointmentService.updateAppointmentStatus(
       appointment.id,
@@ -205,6 +224,50 @@ function getOrCreateSession(appointmentId, actorUserId, actorRole) {
   };
 }
 
+function buildConsultationState(appointmentId, actorUserId, actorRole) {
+  const { appointment, session } = getOrCreateSession(
+    appointmentId,
+    actorUserId,
+    actorRole,
+  );
+  const row = getSessionRowById(session.id);
+  const peerUserId = actorRole === 'lawyer' ? appointment.userId : appointment.lawyerId;
+  const peerRole = actorRole === 'lawyer' ? 'user' : 'lawyer';
+  const needsRtc = ['audio', 'video'].includes(appointment.consultationType);
+
+  let agoraPayload = { enabled: false };
+  if (needsRtc && agoraService.isEnabled() && row.status !== 'ended') {
+    agoraPayload = agoraService.buildJoinCredentials({
+      appointmentId,
+      actorUserId,
+      actorRole,
+      peerUserId,
+      peerRole,
+    });
+  } else if (needsRtc && !agoraService.isEnabled()) {
+    agoraPayload = {
+      enabled: false,
+      error: 'Call service is temporarily unavailable. Please try again later.',
+    };
+  }
+
+  return {
+    appointment,
+    session: mapSession(row),
+    billing: consultationBilling.buildBillingSnapshot(appointment, row, actorRole),
+    peerJoined: actorRole === 'lawyer'
+      ? Boolean(row.user_joined_at)
+      : Boolean(row.lawyer_joined_at),
+    mediaProvider: 'agora',
+    agora: agoraPayload,
+    webrtc: { enabled: false },
+    actor: {
+      id: actorUserId,
+      role: actorRole,
+    },
+  };
+}
+
 function joinSession(appointmentId, actorUserId, actorRole) {
   const { appointment, session } = getOrCreateSession(
     appointmentId,
@@ -213,9 +276,7 @@ function joinSession(appointmentId, actorUserId, actorRole) {
   );
 
   if (session.status === 'ended') {
-    const error = new Error('Consultation session has ended');
-    error.status = 400;
-    throw error;
+    return buildConsultationState(appointmentId, actorUserId, actorRole);
   }
 
   const joinColumn = actorRole === 'lawyer' ? 'lawyer_joined_at' : 'user_joined_at';
@@ -267,31 +328,11 @@ function joinSession(appointmentId, actorUserId, actorRole) {
     throw error;
   }
 
-  return {
-    appointment: freshAppointment,
-    session: mapSession(updated),
-    billing: consultationBilling.buildBillingSnapshot(
-      freshAppointment,
-      updated,
-      actorRole,
-    ),
-    peerJoined: actorRole === 'lawyer'
-      ? Boolean(updated.user_joined_at)
-      : Boolean(updated.lawyer_joined_at),
-    mediaProvider: 'agora',
-    agora: agoraService.buildJoinCredentials({
-      appointmentId,
-      actorUserId,
-      actorRole,
-      peerUserId,
-      peerRole,
-    }),
-    webrtc: { enabled: false },
-    actor: {
-      id: actorUserId,
-      role: actorRole,
-    },
-  };
+  return buildConsultationState(appointmentId, actorUserId, actorRole);
+}
+
+function getConsultationState(appointmentId, actorUserId, actorRole) {
+  return buildConsultationState(appointmentId, actorUserId, actorRole);
 }
 
 function listMessages(sessionId, actorUserId, actorRole, afterId = 0) {
@@ -532,6 +573,7 @@ function listIncomingForLawyer(lawyerId) {
 
 module.exports = {
   getOrCreateSession,
+  getConsultationState,
   joinSession,
   billConsultationMinute,
   listMessages,

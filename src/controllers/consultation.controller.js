@@ -2,7 +2,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const consultationService = require('../services/consultation.service');
 
 const getSession = asyncHandler(async (req, res) => {
-  const payload = consultationService.getOrCreateSession(
+  const payload = consultationService.getConsultationState(
     Number(req.params.appointmentId),
     req.auth.sub,
     req.auth.role,
