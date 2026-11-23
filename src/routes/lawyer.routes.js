@@ -52,6 +52,7 @@ router.post('/wallet/withdraw', requireLawyer, marketplace.withdrawWallet);
 router.get('/appointments', requireLawyer, marketplace.listAppointments);
 router.patch('/appointments/:id/status', requireLawyer, marketplace.updateAppointmentStatus);
 
+router.get('/consultations/incoming', requireLawyer, consultationController.listIncomingConsultations);
 router.get('/consultations', requireLawyer, consultationController.listConsultations);
 router.get('/appointments/:appointmentId/consultation', requireLawyer, consultationController.getSession);
 router.post('/appointments/:appointmentId/consultation/join', requireLawyer, consultationController.joinSession);

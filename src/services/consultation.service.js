@@ -488,6 +488,37 @@ function billConsultationMinute(sessionId, actorUserId, actorRole) {
   );
 }
 
+function listIncomingForLawyer(lawyerId) {
+  return db
+    .prepare(`
+      SELECT
+        a.id AS appointment_id,
+        a.consultation_type,
+        COALESCE(up.full_name, u.phone) AS client_name,
+        u.phone AS client_phone,
+        cs.user_joined_at
+      FROM consultation_sessions cs
+      INNER JOIN appointments a ON a.id = cs.appointment_id
+      INNER JOIN users u ON u.id = a.user_id
+      LEFT JOIN user_profiles up ON up.user_id = a.user_id
+      WHERE a.lawyer_id = ?
+        AND a.consultation_type != 'physical'
+        AND a.status = 'confirmed'
+        AND cs.status != 'ended'
+        AND cs.user_joined_at IS NOT NULL
+        AND cs.lawyer_joined_at IS NULL
+      ORDER BY datetime(cs.user_joined_at) DESC
+    `)
+    .all(lawyerId)
+    .map((row) => ({
+      appointmentId: row.appointment_id,
+      consultationType: row.consultation_type,
+      clientName: row.client_name,
+      clientPhone: row.client_phone,
+      userJoinedAt: row.user_joined_at,
+    }));
+}
+
 module.exports = {
   getOrCreateSession,
   joinSession,
@@ -502,4 +533,5 @@ module.exports = {
   adminForceEndSession,
   postWebRtcSignal,
   listWebRtcSignals,
+  listIncomingForLawyer,
 };

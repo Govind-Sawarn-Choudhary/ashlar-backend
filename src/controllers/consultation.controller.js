@@ -94,6 +94,11 @@ const listConsultations = asyncHandler(async (req, res) => {
   res.json({ appointments });
 });
 
+const listIncomingConsultations = asyncHandler(async (req, res) => {
+  const incoming = consultationService.listIncomingForLawyer(req.auth.sub);
+  res.json({ incoming });
+});
+
 module.exports = {
   getSession,
   joinSession,
@@ -102,6 +107,7 @@ module.exports = {
   endSession,
   billConsultationMinute,
   listConsultations,
+  listIncomingConsultations,
   postWebRtcSignal,
   listWebRtcSignals,
 };
