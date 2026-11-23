@@ -80,6 +80,9 @@ function purchaseProduct(userId, productId, { payFromWallet } = {}) {
   notificationService.createNotification(userId, 'user', {
     title: 'Document order placed',
     body: `${product.name} order received. Our team will contact you shortly.`,
+    category: 'document',
+    actionType: 'document',
+    actionId: productId,
   });
 
   return { product, payment };

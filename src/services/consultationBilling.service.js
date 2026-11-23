@@ -1,6 +1,7 @@
 const db = require('../db');
 const appointmentService = require('./appointment.service');
 const platformSettings = require('./platformSettings.service');
+const notificationService = require('./notification.service');
 const { debitWallet, creditWallet, getWalletSummary } = require('./wallet.service');
 
 function getSessionRowById(sessionId) {
@@ -99,6 +100,12 @@ function billConsultationMinute(sessionId, actorUserId, actorRole, endSessionFn)
   } catch (error) {
     if (error.status === 400 && /insufficient/i.test(error.message)) {
       endSessionFn(sessionId, null, 'system');
+      notificationService.createNotification(appointment.userId, 'user', {
+        title: 'Consultation ended — low balance',
+        body: 'Your wallet ran out during the consultation. Add funds to book again.',
+        category: 'wallet',
+        actionType: 'wallet',
+      });
       const walletError = new Error(
         'Insufficient wallet balance. Session ended — please top up your wallet.',
       );
@@ -127,6 +134,23 @@ function billConsultationMinute(sessionId, actorUserId, actorRole, endSessionFn)
   `).run(billedMinutes, sessionId);
 
   const wallet = getWalletSummary(appointment.userId, 'user');
+  const lowThreshold = ratePerMinute * 3;
+  if (
+    wallet.balance < lowThreshold &&
+    !session.wallet_low_notified &&
+    wallet.balance >= 0
+  ) {
+    db.prepare(
+      'UPDATE consultation_sessions SET wallet_low_notified = 1, updated_at = datetime(\'now\') WHERE id = ?',
+    ).run(sessionId);
+    notificationService.createNotification(appointment.userId, 'user', {
+      title: 'Wallet running low',
+      body: `About ${Math.max(1, Math.floor(wallet.balance / ratePerMinute))} minute(s) left at the current rate. Top up to avoid disconnection.`,
+      category: 'wallet',
+      actionType: 'wallet',
+    });
+  }
+
   return {
     billedMinutes,
     ratePerMinute,

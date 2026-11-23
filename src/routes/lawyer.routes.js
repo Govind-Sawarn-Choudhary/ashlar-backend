@@ -67,6 +67,7 @@ router.post(
 );
 
 router.get('/notifications', requireLawyer, marketplace.listNotifications);
+router.post('/device-token', requireLawyer, marketplace.registerDeviceToken);
 router.patch('/notifications/read-all', requireLawyer, marketplace.markAllNotificationsRead);
 router.patch('/notifications/:id/read', requireLawyer, marketplace.markNotificationRead);
 

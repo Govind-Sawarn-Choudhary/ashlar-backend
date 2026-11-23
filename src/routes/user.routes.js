@@ -61,6 +61,7 @@ router.get('/challan', requireAuth, requireUserRole, marketplace.listChallans);
 router.post('/challan/:id/pay', requireAuth, requireUserRole, marketplace.payChallan);
 
 router.get('/notifications', requireAuth, requireUserRole, marketplace.listNotifications);
+router.post('/device-token', requireAuth, requireUserRole, marketplace.registerDeviceToken);
 router.patch('/notifications/read-all', requireAuth, requireUserRole, marketplace.markAllNotificationsRead);
 router.patch('/notifications/:id/read', requireAuth, requireUserRole, marketplace.markNotificationRead);
 

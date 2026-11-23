@@ -55,17 +55,32 @@ function creditLawyerForBooking(lawyerId, grossAmount, consultationType, appoint
   return payout;
 }
 
-function sendBookingNotifications({ userId, lawyer, consultationType, status, scheduledAt }) {
+function sendBookingNotifications({
+  userId,
+  lawyer,
+  consultationType,
+  status,
+  scheduledAt,
+  appointmentId,
+  mode = 'online',
+}) {
   const scheduleLabel = scheduledAt ? ` on ${scheduledAt}` : '';
+  const category = mode === 'offline' || consultationType === 'physical' ? 'booking' : 'consultation';
 
   if (status === 'pending') {
     notificationService.createNotification(userId, 'user', {
       title: 'Meeting request sent',
       body: `Your in-person meeting request with ${lawyer.fullName}${scheduleLabel} is awaiting lawyer confirmation.`,
+      category,
+      actionType: 'appointment',
+      actionId: appointmentId,
     });
     notificationService.createNotification(lawyer.id, 'lawyer', {
       title: 'New in-person meeting request',
       body: `Confirm or decline a ${consultationType} meeting request${scheduleLabel}.`,
+      category,
+      actionType: 'appointment',
+      actionId: appointmentId,
     });
     return;
   }
@@ -73,11 +88,17 @@ function sendBookingNotifications({ userId, lawyer, consultationType, status, sc
   notificationService.createNotification(userId, 'user', {
     title: 'Appointment confirmed',
     body: `Your ${consultationType} appointment with ${lawyer.fullName} is confirmed.`,
+    category,
+    actionType: 'appointment',
+    actionId: appointmentId,
   });
 
   notificationService.createNotification(lawyer.id, 'lawyer', {
     title: 'New appointment',
     body: `You have a new ${consultationType} consultation booking.`,
+    category,
+    actionType: 'appointment',
+    actionId: appointmentId,
   });
 }
 
@@ -154,6 +175,8 @@ function createBooking(userId, payload) {
       consultationType,
       status,
       scheduledAt,
+      appointmentId: result.lastInsertRowid,
+      mode,
     });
 
     return getAppointmentById(result.lastInsertRowid);
@@ -210,6 +233,8 @@ function createBooking(userId, payload) {
     consultationType,
     status,
     scheduledAt,
+    appointmentId: result.lastInsertRowid,
+    mode,
   });
 
   return getAppointmentById(result.lastInsertRowid);
@@ -323,6 +348,9 @@ function updateAppointmentStatus(appointmentId, status, actorUserId, actorRole) 
     notificationService.createNotification(appointment.userId, 'user', {
       title: 'Meeting confirmed',
       body: `Your in-person meeting with ${appointment.lawyerName || 'the lawyer'} has been confirmed.`,
+      category: 'booking',
+      actionType: 'appointment',
+      actionId: appointmentId,
     });
   }
 
@@ -336,6 +364,9 @@ function updateAppointmentStatus(appointmentId, status, actorUserId, actorRole) 
     notificationService.createNotification(appointment.userId, 'user', {
       title: reasonTitle,
       body: reasonBody,
+      category: 'booking',
+      actionType: 'appointment',
+      actionId: appointmentId,
     });
   }
 
@@ -384,6 +415,9 @@ function updateAppointmentStatus(appointmentId, status, actorUserId, actorRole) 
         actorRole === 'user'
           ? 'The client cancelled their in-person meeting request.'
           : 'You declined or cancelled a pending in-person meeting request.',
+      category: 'booking',
+      actionType: 'appointment',
+      actionId: appointmentId,
     });
   }
 
@@ -403,6 +437,9 @@ function updateAppointmentStatus(appointmentId, status, actorUserId, actorRole) 
         actorRole === 'user'
           ? 'The client cancelled a confirmed appointment.'
           : 'Your lawyer cancelled the appointment.',
+      category: 'booking',
+      actionType: 'appointment',
+      actionId: appointmentId,
     });
   }
 

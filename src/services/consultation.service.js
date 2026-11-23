@@ -1,6 +1,7 @@
 const db = require('../db');
 const appointmentService = require('./appointment.service');
 const consultationBilling = require('./consultationBilling.service');
+const notificationService = require('./notification.service');
 const agoraService = require('./agora.service');
 const webrtcService = require('./webrtc.service');
 
@@ -217,12 +218,34 @@ function joinSession(appointmentId, actorUserId, actorRole) {
 
   const joinColumn = actorRole === 'lawyer' ? 'lawyer_joined_at' : 'user_joined_at';
   const current = getSessionRowById(session.id);
-  if (!current[joinColumn]) {
+  const isFirstJoin = !current[joinColumn];
+  if (isFirstJoin) {
     db.prepare(`
       UPDATE consultation_sessions
       SET ${joinColumn} = datetime('now'), updated_at = datetime('now')
       WHERE id = ?
     `).run(session.id);
+  }
+
+  if (isFirstJoin) {
+    const peerUserId = actorRole === 'lawyer' ? appointment.userId : appointment.lawyerId;
+    const peerRole = actorRole === 'lawyer' ? 'user' : 'lawyer';
+    const consultLabel =
+      appointment.consultationType === 'video'
+        ? 'Video call'
+        : appointment.consultationType === 'audio'
+          ? 'Audio call'
+          : 'Chat consultation';
+    notificationService.createNotification(peerUserId, peerRole, {
+      title: actorRole === 'user' ? `${consultLabel} request` : 'Lawyer joined',
+      body:
+        actorRole === 'user'
+          ? 'A client is waiting to connect. Open the app to join now.'
+          : 'Your lawyer joined the session. Tap to connect before time runs out.',
+      category: 'consultation',
+      actionType: 'consultation',
+      actionId: appointmentId,
+    });
   }
 
   maybeActivateSession(session.id);

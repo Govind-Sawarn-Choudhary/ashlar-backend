@@ -296,6 +296,49 @@ function initSchema(db) {
   migrateConsultationBillingColumns(db);
   migrateLawyerAvailabilityTable(db);
   migrateWebRtcSignalsTable(db);
+  migrateNotificationEnhancements(db);
+}
+
+function migrateNotificationEnhancements(db) {
+  const notificationCols = [
+    "ALTER TABLE notifications ADD COLUMN category TEXT NOT NULL DEFAULT 'general'",
+    'ALTER TABLE notifications ADD COLUMN action_type TEXT',
+    'ALTER TABLE notifications ADD COLUMN action_id INTEGER',
+  ];
+  for (const sql of notificationCols) {
+    try {
+      db.exec(sql);
+    } catch (error) {
+      if (!String(error.message).includes('duplicate column name')) {
+        throw error;
+      }
+    }
+  }
+
+  try {
+    db.exec(
+      'ALTER TABLE consultation_sessions ADD COLUMN wallet_low_notified INTEGER NOT NULL DEFAULT 0',
+    );
+  } catch (error) {
+    if (!String(error.message).includes('duplicate column name')) {
+      throw error;
+    }
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS device_push_tokens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('user', 'lawyer')),
+      token TEXT NOT NULL UNIQUE,
+      platform TEXT NOT NULL DEFAULT 'android',
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_device_push_tokens_user
+      ON device_push_tokens(user_id, role);
+  `);
 }
 
 function migrateWebRtcSignalsTable(db) {

@@ -62,17 +62,20 @@ function buildJoinCredentials({
   const chatUserId = buildChatUserId(actorUserId, actorRole);
   const peerChatUserId = buildChatUserId(peerUserId, peerRole);
   const rtcUid = Number(actorUserId);
+  /** Ashlar uses in-app REST chat by default; Agora Chat only when key is set. */
+  const chatEnabled = Boolean(config.agoraChatAppKey);
 
   return {
     enabled: true,
     appId: config.agoraAppId,
-    chatAppKey: config.agoraChatAppKey || config.agoraAppId,
+    chatEnabled,
+    chatAppKey: chatEnabled ? config.agoraChatAppKey : null,
     channelName,
     uid: rtcUid,
     rtcToken: buildRtcToken(channelName, rtcUid),
-    chatToken: buildChatToken(chatUserId),
-    chatUserId,
-    peerChatUserId,
+    chatToken: chatEnabled ? buildChatToken(chatUserId) : null,
+    chatUserId: chatEnabled ? chatUserId : null,
+    peerChatUserId: chatEnabled ? peerChatUserId : null,
   };
 }
 

@@ -1,4 +1,5 @@
 const db = require('../db');
+const pushNotificationService = require('./pushNotification.service');
 
 function mapNotification(row) {
   return {
@@ -7,6 +8,9 @@ function mapNotification(row) {
     body: row.body,
     isRead: Boolean(row.is_read),
     createdAt: row.created_at,
+    category: row.category || 'general',
+    actionType: row.action_type || null,
+    actionId: row.action_id != null ? Number(row.action_id) : null,
   };
 }
 
@@ -22,15 +26,40 @@ function listNotifications(userId, role) {
     .map(mapNotification);
 }
 
-function createNotification(userId, role, { title, body }) {
-  const result = db.prepare(`
-    INSERT INTO notifications (user_id, role, title, body)
-    VALUES (?, ?, ?, ?)
-  `).run(userId, role, title, body);
+function countUnread(userId, role) {
+  return db
+    .prepare(
+      'SELECT COUNT(*) AS count FROM notifications WHERE user_id = ? AND role = ? AND is_read = 0',
+    )
+    .get(userId, role).count;
+}
 
-  return mapNotification(
+function createNotification(
+  userId,
+  role,
+  { title, body, category = 'general', actionType = null, actionId = null },
+) {
+  const result = db.prepare(`
+    INSERT INTO notifications (user_id, role, title, body, category, action_type, action_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(userId, role, title, body, category, actionType, actionId);
+
+  const notification = mapNotification(
     db.prepare('SELECT * FROM notifications WHERE id = ?').get(result.lastInsertRowid),
   );
+
+  void pushNotificationService.sendPushToUser(userId, role, {
+    title,
+    body,
+    data: {
+      notificationId: String(notification.id),
+      category: notification.category,
+      actionType: notification.actionType || '',
+      actionId: notification.actionId != null ? String(notification.actionId) : '',
+    },
+  });
+
+  return notification;
 }
 
 function markNotificationRead(userId, role, notificationId) {
@@ -76,6 +105,7 @@ function seedWelcomeNotification(userId, role) {
 
 module.exports = {
   listNotifications,
+  countUnread,
   createNotification,
   markNotificationRead,
   markAllRead,

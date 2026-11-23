@@ -24,6 +24,8 @@ const config = {
   webrtcTurnUrl: process.env.WEBRTC_TURN_URL || '',
   webrtcTurnUsername: process.env.WEBRTC_TURN_USERNAME || '',
   webrtcTurnCredential: process.env.WEBRTC_TURN_CREDENTIAL || '',
+  /** Firebase Admin service account JSON string for FCM (push when app killed) */
+  firebaseServiceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '',
 };
 
 module.exports = config;

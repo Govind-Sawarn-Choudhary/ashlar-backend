@@ -8,6 +8,8 @@ const marketplaceService = require('../services/marketplace.service');
 const appointmentService = require('../services/appointment.service');
 const challanService = require('../services/challan.service');
 const notificationService = require('../services/notification.service');
+const deviceTokenService = require('../services/deviceToken.service');
+const pushNotificationService = require('../services/pushNotification.service');
 const documentService = require('../services/document.service');
 const db = require('../db');
 
@@ -24,6 +26,8 @@ const getDashboard = asyncHandler(async (req, res) => {
     recentAppointments: appointments,
     featuredLawyers: lawyers,
     preference: 'law',
+    unreadNotifications: notificationService.countUnread(userId, 'user'),
+    pushEnabled: pushNotificationService.isPushEnabled(),
   });
 });
 
@@ -198,7 +202,14 @@ const payChallan = asyncHandler(async (req, res) => {
 
 const listNotifications = asyncHandler(async (req, res) => {
   const notifications = notificationService.listNotifications(req.auth.sub, 'user');
-  res.json({ notifications });
+  const unreadCount = notificationService.countUnread(req.auth.sub, 'user');
+  res.json({ notifications, unreadCount, pushEnabled: pushNotificationService.isPushEnabled() });
+});
+
+const registerDeviceToken = asyncHandler(async (req, res) => {
+  const { token, platform } = req.body;
+  deviceTokenService.upsertToken(req.auth.sub, 'user', token, platform || 'android');
+  res.json({ success: true });
 });
 
 const markNotificationRead = asyncHandler(async (req, res) => {
@@ -281,6 +292,7 @@ module.exports = {
   listChallans,
   payChallan,
   listNotifications,
+  registerDeviceToken,
   markNotificationRead,
   markAllNotificationsRead,
   listDocumentOrders,

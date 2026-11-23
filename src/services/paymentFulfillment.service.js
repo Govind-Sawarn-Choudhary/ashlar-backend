@@ -158,6 +158,13 @@ function fulfillWalletTopup(userId, payment) {
     .prepare('SELECT balance FROM wallets WHERE user_id = ? AND role = ?')
     .get(userId, 'user');
 
+  notificationService.createNotification(userId, 'user', {
+    title: 'Wallet recharged',
+    body: `₹${payment.amount} added. Your balance is ₹${updated?.balance ?? 0}.`,
+    category: 'wallet',
+    actionType: 'wallet',
+  });
+
   return {
     balance: updated?.balance ?? 0,
     payment,
@@ -177,6 +184,9 @@ function fulfillDocument(userId, payment, metadata) {
   notificationService.createNotification(userId, 'user', {
     title: 'Document order placed',
     body: `${product.name} order received. Our team will contact you shortly.`,
+    category: 'document',
+    actionType: 'document',
+    actionId: productId,
   });
 
   return { product, payment };

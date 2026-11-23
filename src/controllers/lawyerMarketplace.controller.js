@@ -2,6 +2,8 @@ const asyncHandler = require('../utils/asyncHandler');
 const walletService = require('../services/wallet.service');
 const appointmentService = require('../services/appointment.service');
 const notificationService = require('../services/notification.service');
+const deviceTokenService = require('../services/deviceToken.service');
+const pushNotificationService = require('../services/pushNotification.service');
 
 const getDashboardStats = asyncHandler(async (req, res) => {
   const lawyerId = req.auth.sub;
@@ -18,6 +20,8 @@ const getDashboardStats = asyncHandler(async (req, res) => {
       missedLeads: stats.missedLeads,
     },
     walletBalance: wallet.balance,
+    unreadNotifications: notificationService.countUnread(lawyerId, 'lawyer'),
+    pushEnabled: pushNotificationService.isPushEnabled(),
   });
 });
 
@@ -45,6 +49,8 @@ const withdrawWallet = asyncHandler(async (req, res) => {
   notificationService.createNotification(req.auth.sub, 'lawyer', {
     title: 'Withdrawal successful',
     body: `₹${amount} has been withdrawn from your wallet.`,
+    category: 'wallet',
+    actionType: 'wallet',
   });
 
   res.json(result);
@@ -76,7 +82,14 @@ const updateAppointmentStatus = asyncHandler(async (req, res) => {
 
 const listNotifications = asyncHandler(async (req, res) => {
   const notifications = notificationService.listNotifications(req.auth.sub, 'lawyer');
-  res.json({ notifications });
+  const unreadCount = notificationService.countUnread(req.auth.sub, 'lawyer');
+  res.json({ notifications, unreadCount, pushEnabled: pushNotificationService.isPushEnabled() });
+});
+
+const registerDeviceToken = asyncHandler(async (req, res) => {
+  const { token, platform } = req.body;
+  deviceTokenService.upsertToken(req.auth.sub, 'lawyer', token, platform || 'android');
+  res.json({ success: true });
 });
 
 const markNotificationRead = asyncHandler(async (req, res) => {
@@ -103,6 +116,7 @@ module.exports = {
   listAppointments,
   updateAppointmentStatus,
   listNotifications,
+  registerDeviceToken,
   markNotificationRead,
   markAllNotificationsRead,
 };
