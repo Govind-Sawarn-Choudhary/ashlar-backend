@@ -4,6 +4,9 @@ const platformSettings = require('./platformSettings.service');
 const notificationService = require('./notification.service');
 const { debitWallet, creditWallet, getWalletSummary } = require('./wallet.service');
 
+const MIN_SECONDS_PER_MINUTE = 40;
+const WINDOW_SECONDS = 60;
+
 function getSessionRowById(sessionId) {
   return db.prepare('SELECT * FROM consultation_sessions WHERE id = ?').get(sessionId);
 }
@@ -46,7 +49,161 @@ function resolveRatePerMinute(appointment) {
 }
 
 /**
- * Debit user wallet and credit lawyer for one consultation minute (Astrotalk-style).
+ * Billable minute = at least 40 seconds in that 60-second window (0–40s free, 1:40+ = 2 min, etc.).
+ */
+function computeBillableMinutes(totalSeconds) {
+  const secs = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  if (secs < MIN_SECONDS_PER_MINUTE) {
+    return 0;
+  }
+  let remaining = secs;
+  let count = 0;
+  while (remaining > 0) {
+    const inWindow = Math.min(remaining, WINDOW_SECONDS);
+    if (inWindow >= MIN_SECONDS_PER_MINUTE) {
+      count += 1;
+    }
+    remaining -= WINDOW_SECONDS;
+  }
+  return count;
+}
+
+function secondsSinceStarted(startedAt) {
+  if (!startedAt) {
+    return 0;
+  }
+  const row = db
+    .prepare(
+      "SELECT CAST((julianday('now') - julianday(?)) * 86400 AS INTEGER) AS secs",
+    )
+    .get(startedAt);
+  return Math.max(0, row?.secs ?? 0);
+}
+
+function secondsBetween(startedAt, endedAt) {
+  if (!startedAt || !endedAt) {
+    return 0;
+  }
+  const row = db
+    .prepare(
+      'SELECT CAST((julianday(?) - julianday(?)) * 86400 AS INTEGER) AS secs',
+    )
+    .get(endedAt, startedAt);
+  return Math.max(0, row?.secs ?? 0);
+}
+
+/** Seconds of active call before minute `(billedSoFar + 1)` may be charged. */
+function secondsUntilNextBill(billedSoFar) {
+  return billedSoFar * WINDOW_SECONDS + MIN_SECONDS_PER_MINUTE;
+}
+
+function chargeOneMinute(session, appointment, ratePerMinute) {
+  debitWallet(appointment.userId, 'user', {
+    amount: ratePerMinute,
+    description: `${appointment.consultationType} consultation (1 min)`,
+    referenceType: 'consultation_minute',
+    referenceId: session.id,
+  });
+
+  const payout = platformSettings.applyLawyerPayout(ratePerMinute);
+  creditWallet(appointment.lawyerId, 'lawyer', {
+    amount: payout.netAmount,
+    description: `${appointment.consultationType} consultation (1 min)`,
+    referenceType: 'consultation_minute',
+    referenceId: session.id,
+  });
+}
+
+function refundOneMinute(session, appointment, ratePerMinute) {
+  creditWallet(appointment.userId, 'user', {
+    amount: ratePerMinute,
+    description: `${appointment.consultationType} consultation adjustment (partial min)`,
+    referenceType: 'consultation_adjustment',
+    referenceId: session.id,
+  });
+
+  const payout = platformSettings.applyLawyerPayout(ratePerMinute);
+  try {
+    debitWallet(appointment.lawyerId, 'lawyer', {
+      amount: payout.netAmount,
+      description: `${appointment.consultationType} consultation adjustment`,
+      referenceType: 'consultation_adjustment',
+      referenceId: session.id,
+    });
+  } catch (_) {
+    // Lawyer wallet may be insufficient; user refund still applied.
+  }
+}
+
+function syncBilledMinutes(sessionId, targetMinutes) {
+  db.prepare(`
+    UPDATE consultation_sessions
+    SET billed_minutes = ?,
+        last_billed_at = datetime('now'),
+        updated_at = datetime('now')
+    WHERE id = ?
+  `).run(targetMinutes, sessionId);
+}
+
+/**
+ * On session end, align wallet charges with 40-second-per-minute rules (refund or catch-up).
+ */
+function finalizeSessionBilling(sessionId) {
+  const session = getSessionRowById(sessionId);
+  if (!session || !session.started_at) {
+    return null;
+  }
+
+  const appointment = appointmentService.getAppointmentById(session.appointment_id);
+  if (!appointment || appointment.billingModel !== 'per_minute') {
+    return null;
+  }
+
+  const ratePerMinute = resolveRatePerMinute(appointment);
+  if (ratePerMinute <= 0) {
+    return null;
+  }
+
+  const endAt = session.ended_at || db.prepare("SELECT datetime('now') AS now").get().now;
+  const elapsed = secondsBetween(session.started_at, endAt);
+  const targetMinutes = computeBillableMinutes(elapsed);
+  const billedSoFar = session.billed_minutes || 0;
+
+  if (targetMinutes < billedSoFar) {
+    for (let i = 0; i < billedSoFar - targetMinutes; i += 1) {
+      refundOneMinute(session, appointment, ratePerMinute);
+    }
+    syncBilledMinutes(sessionId, targetMinutes);
+  } else if (targetMinutes > billedSoFar) {
+    const toCharge = targetMinutes - billedSoFar;
+    for (let i = 0; i < toCharge; i += 1) {
+      try {
+        chargeOneMinute(session, appointment, ratePerMinute);
+      } catch (error) {
+        if (error.status === 400 && /insufficient/i.test(error.message)) {
+          syncBilledMinutes(sessionId, billedSoFar + i);
+          return {
+            billedMinutes: billedSoFar + i,
+            partial: true,
+            ratePerMinute,
+          };
+        }
+        throw error;
+      }
+    }
+    syncBilledMinutes(sessionId, targetMinutes);
+  }
+
+  return {
+    billedMinutes: targetMinutes,
+    ratePerMinute,
+    totalCharged: targetMinutes * ratePerMinute,
+    callDurationSeconds: elapsed,
+  };
+}
+
+/**
+ * Debit user wallet and credit lawyer for one consultation minute (per-minute calls).
  */
 function billConsultationMinute(sessionId, actorUserId, actorRole, endSessionFn) {
   const { session, appointment } = assertSessionAccess(sessionId, actorUserId, actorRole);
@@ -73,30 +230,29 @@ function billConsultationMinute(sessionId, actorUserId, actorRole, endSessionFn)
     return { skipped: true, reason: 'max_duration_reached', billedMinutes: billedSoFar };
   }
 
-  if (session.last_billed_at) {
-    const throttle = db
-      .prepare("SELECT datetime('now', '-50 seconds') < datetime(?) AS tooSoon")
-      .get(session.last_billed_at);
-    if (throttle?.tooSoon) {
-      const wallet = getWalletSummary(appointment.userId, 'user');
-      return {
-        skipped: true,
-        reason: 'throttled',
-        billedMinutes: billedSoFar,
-        ratePerMinute,
-        walletBalance: wallet.balance,
-        totalCharged: billedSoFar * ratePerMinute,
-      };
-    }
+  if (!session.started_at) {
+    return { skipped: true, reason: 'not_started', billedMinutes: billedSoFar };
+  }
+
+  const elapsed = secondsSinceStarted(session.started_at);
+  const dueAt = secondsUntilNextBill(billedSoFar);
+  if (elapsed < dueAt) {
+    const wallet = getWalletSummary(appointment.userId, 'user');
+    return {
+      skipped: true,
+      reason: 'grace_period',
+      billedMinutes: billedSoFar,
+      ratePerMinute,
+      walletBalance: wallet.balance,
+      totalCharged: billedSoFar * ratePerMinute,
+      elapsedSeconds: elapsed,
+      nextBillAtSeconds: dueAt,
+      graceSeconds: MIN_SECONDS_PER_MINUTE,
+    };
   }
 
   try {
-    debitWallet(appointment.userId, 'user', {
-      amount: ratePerMinute,
-      description: `${appointment.consultationType} consultation (1 min)`,
-      referenceType: 'consultation_minute',
-      referenceId: sessionId,
-    });
+    chargeOneMinute(session, appointment, ratePerMinute);
   } catch (error) {
     if (error.status === 400 && /insufficient/i.test(error.message)) {
       endSessionFn(sessionId, null, 'system');
@@ -116,22 +272,8 @@ function billConsultationMinute(sessionId, actorUserId, actorRole, endSessionFn)
     throw error;
   }
 
-  const payout = platformSettings.applyLawyerPayout(ratePerMinute);
-  creditWallet(appointment.lawyerId, 'lawyer', {
-    amount: payout.netAmount,
-    description: `${appointment.consultationType} consultation (1 min)`,
-    referenceType: 'consultation_minute',
-    referenceId: sessionId,
-  });
-
   const billedMinutes = billedSoFar + 1;
-  db.prepare(`
-    UPDATE consultation_sessions
-    SET last_billed_at = datetime('now'),
-        billed_minutes = ?,
-        updated_at = datetime('now')
-    WHERE id = ?
-  `).run(billedMinutes, sessionId);
+  syncBilledMinutes(sessionId, billedMinutes);
 
   const wallet = getWalletSummary(appointment.userId, 'user');
   const lowThreshold = ratePerMinute * 3;
@@ -157,6 +299,9 @@ function billConsultationMinute(sessionId, actorUserId, actorRole, endSessionFn)
     walletBalance: wallet.balance,
     totalCharged: billedMinutes * ratePerMinute,
     maxMinutes,
+    elapsedSeconds: elapsed,
+    nextBillAtSeconds: secondsUntilNextBill(billedMinutes),
+    graceSeconds: MIN_SECONDS_PER_MINUTE,
   };
 }
 
@@ -172,6 +317,13 @@ function buildBillingSnapshot(appointment, session, actorRole) {
       ? getWalletSummary(appointment.userId, 'user')
       : null;
 
+  let elapsedSeconds = 0;
+  let nextBillAtSeconds = null;
+  if (session?.started_at && session?.status === 'active') {
+    elapsedSeconds = secondsSinceStarted(session.started_at);
+    nextBillAtSeconds = secondsUntilNextBill(session.billed_minutes || 0);
+  }
+
   return {
     model: 'per_minute',
     ratePerMinute,
@@ -180,10 +332,16 @@ function buildBillingSnapshot(appointment, session, actorRole) {
     walletBalance: wallet?.balance ?? null,
     billedMinutes: session?.billed_minutes ?? 0,
     maxMinutes: appointment.durationMinutes || 60,
+    graceSeconds: MIN_SECONDS_PER_MINUTE,
+    elapsedSeconds,
+    nextBillAtSeconds,
   };
 }
 
 module.exports = {
   billConsultationMinute,
   buildBillingSnapshot,
+  finalizeSessionBilling,
+  computeBillableMinutes,
+  MIN_SECONDS_PER_MINUTE,
 };

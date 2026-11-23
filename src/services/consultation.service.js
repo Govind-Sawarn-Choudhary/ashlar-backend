@@ -158,6 +158,8 @@ function endSession(sessionId, actorUserId, actorRole = 'user') {
     WHERE id = ?
   `).run(sessionId);
 
+  consultationBilling.finalizeSessionBilling(sessionId);
+
   webrtcService.clearSignals(sessionId);
 
   const appointment = appointmentService.getAppointmentById(session.appointment_id);
